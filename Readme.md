@@ -36,7 +36,7 @@ All test data and configuration files are available for download via the Google 
 
 ## 💻 Command Line Usage Examples (Docker)
 
-Below are command line examples for running the data conversion using the `guomics2017/msdt-converter:v1.1` Docker image for different instrument data.
+Below are command line examples for running the data conversion using the `guomics2017/msdt-converter:v1.2` Docker image for different instrument data.
 
 > **Note:** Please replace the local path `D:\Work\MSDT_Converter` in the commands with your actual data storage path.
 
@@ -45,7 +45,7 @@ Below are command line examples for running the data conversion using the `guomi
 Uses the `config_mzml.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.1 -config=/home/config_mzml.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.2 -config=/home/config_mzml.json
 ```
 
 ### 2. Bruker Data Conversion
@@ -53,7 +53,7 @@ docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.
 Uses the `config_tims.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.1 -config=/home/config_tims.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.2 -config=/home/config_tims.json
 ```
 
 ### 3. SCIEX Data Conversion
@@ -61,7 +61,7 @@ docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.
 Uses the `config_wiff.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.1 -config=/home/config_wiff.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.2 -config=/home/config_wiff.json
 ```
 
 
@@ -98,57 +98,17 @@ complex setup.
 
 ---
 
-### 💻 1. Windows
-
-The process involves **pulling the image from Docker Hub** and then running a container, mapping your local data
-directory to the container's working directory.
-
-1. **Open Docker Desktop.** Ensure the Docker engine is running.
-2. **Pull the Docker Image** from the registry using your command line (e.g., PowerShell or Command Prompt):
-   ```bash
-   docker pull guomics2017/msdt-converter:v1.1
-   ```
-3. **Run the Container** by mounting your local working directory (`D:\Work\MassNet-DDA` in this example) to the
-   container's internal data path (`/home/test_data`) and specifying the path to your configuration file (
-   `config.json`):
-   ```bash
-   docker run --rm -v "D:\Work\MassNet-DDA":/home/test_data guomics2017/msdt-converter:v1.1 -config=/home/test_data/config.json
-   ```
-    * **Note:** The `-v` flag maps your local directory to the container. The paths must be adjusted according to your
-      actual setup.
-
----
-
-### 🐧 2. Linux
-
 The process involves **pulling the image from Docker Hub** and then running a container, mapping your local data
 directory to the container's working directory.
 
 1. **Ensure the Docker service is running.**
 2. **Pull the Docker Image** from the registry in your terminal:
    ```bash
-   docker pull guomics2017/msdt-converter:v1.1
+   docker pull guomics2017/msdt-converter:v1.2
    ```
 3. **Run the Container** (Example using a typical Linux absolute path):
    ```bash
-   docker run --rm -v /home/user/MassNet-DDA:/home/test_data guomics2017/msdt-converter:v1.1 -config=/home/test_data/config.json
-   ```
-
----
-
-### 🍎 3. macOS
-
-The process involves **pulling the image from Docker Hub** and then running a container, mapping your local data
-directory to the container's working directory.
-
-1. **Open Docker Desktop.** Ensure the Docker engine is running.
-2. **Pull the Docker Image** from the registry in your terminal:
-   ```bash
-   docker pull guomics2017/msdt-converter:v1.1
-   ```
-3. **Run the Container** (Example using a typical macOS path):
-   ```bash
-   docker run --rm -v /Users/yourname/Documents/MassNet-DDA:/home/test_data guomics2017/msdt-converter:v1.1 -config=/home/test_data/config.json
+   docker run --rm -v /home/user/MassNet-DDA:/home/test_data guomics2017/msdt-converter:v1.2 -config=/home/test_data/config.json
    ```
 
 ## Option B: Conda

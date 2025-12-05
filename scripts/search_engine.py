@@ -64,7 +64,9 @@ def generate_sage_search_result_fn(param):
     try:
         logger.info(f"Generating: {output_path}")
         logger.info(f"Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        env = os.environ.copy()
+        env['RUST_MIN_STACK'] = '8388608'
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
         result_sage_file_path = os.path.join(workdir, 'results.sage.tsv')
         shutil.move(result_sage_file_path, output_path)
         logger.info(f"Successfully generated: {output_path}")
