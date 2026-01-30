@@ -305,6 +305,6 @@ This section handles direct conversion from other data formats to MSDT.
 
 ## 📚 Citation
 
-If you use **MassNet-Converter** in your work, please cite the following publication:
+When using **MassNet-Converter**, please cite the following publication:
 
 Jun, A., Zhang, X., Zhang, X., Wei, J., Zhang, T., Deng, Y., ... & Guo, T. (2025). MassNet: billion-scale AI-friendly mass spectral corpus enables robust de novo peptide sequencing. bioRxiv, 2025-06.
