@@ -12,7 +12,7 @@
     * Bruker’s native `.d` directory format (TimsTOF)
 
 * **Output Format:**
-    * Standardized **MSDT** files stored in **Apache Parquet**, enabling fast I/O, high compression, and compatibility with distributed GPU/TPU training pipelines.
+    * Standardized **MSDT** files stored in **Apache Parquet**, enabling efficient storage, high compression, and scalable data preparation for large-scale AI workflows.
 
 * **Optimized for AI Workflows:**
     * Converts raw and search result data into structured **tensor format** for seamless integration with machine learning models, such as XuanjiNovo, DeepLC, and DDA-BERT.
