@@ -4,6 +4,7 @@
 schema-rich data representation designed for large-scale proteomics analysis, storage, exchange, and reuse.  
 
 For more detailed information on the MSDT format, including its schema and design rationale, please refer to ![MSDT v1.0_updated_20250205](./MSDT v1.0_updated_20250205.pdf) 
+
 ---
 
 ## ✨ Key Features
