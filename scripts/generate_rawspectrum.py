@@ -1,6 +1,7 @@
 import os
 import logging
 import subprocess
+import pandas as pd
 
 # Configure logger (accessible by caller)
 logger = logging.getLogger(__name__)
@@ -38,17 +39,23 @@ def generate_rawspectrum_fn(param):
         if not raw_data_path.endswith('.mzML'):
             logger.error(f"Input file extension is not .mzML: {raw_data_path}")
             return 2
-        cmd = [deal_mzml_rawspectrum, raw_data_path, output_path]
+        temp_output_path = output_path.replace('.parquet', '_temp.tsv')
+        cmd = [deal_mzml_rawspectrum, raw_data_path, temp_output_path]
+
     elif data_type == 'tims':
         if not raw_data_path.endswith('.d'):
             logger.error(f"Input file extension is not .tims: {raw_data_path}")
             return 2
-        cmd = [deal_tims_rawspectrum, raw_data_path, output_path]
+        temp_output_path = output_path.replace('.parquet', '_temp.tsv')
+        cmd = [deal_tims_rawspectrum, raw_data_path, temp_output_path]
+
     elif data_type == 'wiff2mzml':
         if not raw_data_path.endswith('.mzML'):
             logger.error(f"Input file extension is not .mzML: {raw_data_path}")
             return 2
-        cmd = [deal_wiff_rawspectrum, raw_data_path, output_path]
+        temp_output_path = output_path.replace('.parquet', '_temp.tsv')
+        cmd = [deal_wiff_rawspectrum, raw_data_path, temp_output_path]
+        
     else:
         logger.error(f"Unknown data type: {data_type}")
         return -1
@@ -57,6 +64,14 @@ def generate_rawspectrum_fn(param):
         logger.info(f"Generating: {output_path}")
         logger.info(f"Executing command: {' '.join(cmd)}")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        
+        if data_type == 'tims':
+            temp_df = pd.read_csv(temp_output_path, sep='\t', usecols=['scan','precursor_mz','rt','ion_mobility','mz_array','intensity_array'])
+        else:
+            temp_df = pd.read_csv(temp_output_path, sep='\t', usecols=['scan','precursor_mz','rt','mz_array','intensity_array'])
+        temp_df.to_parquet(output_path)
+        os.remove(temp_output_path)
+        
         logger.info(f"Successfully generated: {output_path}")
         return 0
     except subprocess.CalledProcessError as e:

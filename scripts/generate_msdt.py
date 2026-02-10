@@ -44,14 +44,15 @@ def clean_psm_func(peptide, residues_dict):
     return peptide
     
 def change_wiff_scan(right_scan_path, wrong_scan_path):
-    right_df = pd.read_csv(right_scan_path, sep='\t')
+    right_df = pd.read_parquet(right_scan_path)
     wrong_df = pd.read_csv(wrong_scan_path, sep='\t', usecols=['scan'])
     right_df['scan_sr'] = list(wrong_df['scan'])
     return right_df
  
 def gen_mzml_tims_sage_msdt(raw_data_path, search_result_path, output_path, unify_residue):
     try:
-        raw_df = pd.read_csv(raw_data_path, sep='\t', usecols=['scan','precursor_mz','rt','mz_array','intensity_array'])
+        raw_df = pd.read_parquet(raw_data_path)
+        raw_df = raw_df[['scan','precursor_mz','rt','mz_array','intensity_array']]
         raw_df = raw_df.dropna(subset=['scan', 'mz_array','intensity_array'])
         raw_df['scan'] = raw_df['scan'].astype(int)
         raw_df['mz_array'] = raw_df['mz_array'].str.split(',').map(lambda x: np.array(x, dtype='float32'))
@@ -117,7 +118,11 @@ def gen_mzml_tims_sage_msdt(raw_data_path, search_result_path, output_path, unif
     
 def gen_mzml_fragpipe_msdt(raw_data_path, fp_pin_path, output_path, unify_residue):
     try:
-        raw_df = pd.read_csv(raw_data_path, sep='\t', usecols=['scan','precursor_mz','rt','mz_array','intensity_array'])
+        raw_df = pd.read_parquet(raw_data_path)
+        if 'ion_mobility' in raw_df.columns:
+            raw_df = raw_df[['scan','precursor_mz','rt','ion_mobility','mz_array','intensity_array']]
+        else:
+            raw_df = raw_df[['scan','precursor_mz','rt','mz_array','intensity_array']]
         raw_df = raw_df.dropna(subset=['scan', 'mz_array','intensity_array'])
         raw_df['scan'] = raw_df['scan'].astype(int)
         raw_df['mz_array'] = raw_df['mz_array'].str.split(',').map(lambda x: np.array(x, dtype='float32'))

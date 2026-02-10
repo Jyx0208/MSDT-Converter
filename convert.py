@@ -71,7 +71,7 @@ def parse_config(cfg: dict):
             'config_path': cfg["generate_sage_search_result"]['config_path']
         }
 
-    # Step 2_2: generate sage search result
+    # Step 2_2: generate fp search result
     if cfg.get("generate_fragpipe_search_result", {}).get("need", False) == True:
         steps['generate_fragpipe_search_result'] = cfg.get("generate_fragpipe_search_result")
 

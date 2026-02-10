@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 import json
+import re
+import glob
 
 # Configure logger (accessible by caller)
 logger = logging.getLogger(__name__)
@@ -116,14 +118,56 @@ def run_cmd(cmd, cwd=None):
                 continue
 
 
-def run_fragpipe(manifest_path, workflow_path, fragpipe_output_path, exe_abs_path, thread_num):
+def run_fragpipe(manifest_path, workflow_path, fragpipe_output_path, exe_abs_path, thread_num, fasta_path):
     frag_base_dir = os.path.dirname(os.path.dirname(exe_abs_path))
 
     ion_quant_exe_path = os.path.join(frag_base_dir, 'IonQuant-1.10.27', 'IonQuant-1.10.27.jar')
     msfrag_exe_path = os.path.join(frag_base_dir, 'MSFragger-4.0', 'MSFragger-4.0.jar')
     philosopher_exe_path = os.path.join(frag_base_dir, 'philosopher-v5.1.1')
 
-    cmd = [exe_abs_path, '--headless', '--workflow', workflow_path, '--manifest',
+    # Philosopher
+    fasta_dir = os.path.dirname(fasta_path)
+    if not os.path.exists(fasta_dir):
+        logger.error(f"Fasta file does not exist: {fasta_path}")
+
+    philosopher_cmd1 = [philosopher_exe_path, 'workspace', '--clean', '--nocheck']
+    subprocess.run(philosopher_cmd1, cwd=fasta_dir, check=True)
+    
+    philosopher_cmd2 = [philosopher_exe_path, 'workspace', '--init', '--nocheck']
+    subprocess.run(philosopher_cmd2, cwd=fasta_dir, check=True)
+    
+    philosopher_cmd3 = [philosopher_exe_path, 'database', '--custom', fasta_path]
+    subprocess.run(philosopher_cmd3, cwd=fasta_dir, check=True)
+    
+    philosopher_cmd4 = [philosopher_exe_path, 'workspace', '--clean', '--nocheck']
+    subprocess.run(philosopher_cmd4, cwd=fasta_dir, check=True)
+
+    # get decoyfasta
+    decoyfasta_pattern = os.path.join(fasta_dir, '*.fasta.fas')
+    decoyfasta_list = glob.glob(decoyfasta_pattern)
+    if not decoyfasta_list:
+        raise FileNotFoundError(f"Decoy fasta file not found in {decoyfasta_pattern}")
+    decoyfasta = decoyfasta_list[0]
+    
+    workflow_dest = os.path.join(fragpipe_output_path, os.path.basename(workflow_path))
+    shutil.copy(workflow_path, workflow_dest)
+    logger.info(f'new workflow file has been generated: {workflow_dest}')
+
+    with open(workflow_dest, 'r') as f:
+        content = f.read()
+    
+    pattern = r'(database\.db-path=).*'
+    replacement = f'database.db-path={decoyfasta}'
+    if re.search(pattern, content):
+        content = re.sub(pattern, replacement, content)
+    else:
+        content += f'\n{replacement}'
+    
+    with open(workflow_dest, 'w') as f:
+        f.write(content)
+    logger.info(f'fasta with decoy has been generated: {decoyfasta}')
+    
+    cmd = [exe_abs_path, '--headless', '--workflow', workflow_dest, '--manifest',
            manifest_path, '--workdir', fragpipe_output_path,
            '--config-ionQuant', ion_quant_exe_path, '--config-msfragger', msfrag_exe_path,
            '--config-philosopher', philosopher_exe_path, '--threads', str(thread_num)]
@@ -142,11 +186,12 @@ def generate_fp_search_result_fn(param):
     """
     file_path = param.get('data_path')
     thread_num = param.get('thread_num')
+    fasta_path = param.get('fasta_path')
     workflow_path = param.get('workflow_path')
     workdir = param.get('workdir')
     os.makedirs(workdir, exist_ok=True)
     manifest_path = build_manifest(file_path, workdir)
-    run_fragpipe(manifest_path, workflow_path, workdir, fragpipe_exe_path, thread_num)
+    run_fragpipe(manifest_path, workflow_path, workdir, fragpipe_exe_path, thread_num, fasta_path)
     # check bin file
     base_file_name = os.path.basename(file_path)
     # find _edited.pin file
