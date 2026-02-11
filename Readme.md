@@ -3,7 +3,7 @@
 **MassNet-Converter** is a tool for converting commonly used mass spectrometry data formats into the Mass Spectrometry DDA Tensor (MSDT) format—an efficient, standardized, and AI-friendly, 
 schema-rich data representation designed for large-scale proteomics analysis, storage, exchange, and reuse.  
 
-For more detailed information on the MSDT format, including its schema and design rationale, please refer to [MSDT v1.0_updated_20250205.pdf](https://raw.githubusercontent.com/guomics-lab/MSDT-Converter/refs/heads/main/MSDT%20v1.0_updated_20250205.pdf) 
+For more detailed information on the MSDT format, including its schema and design rationale, please refer to [MSDT v1.0_updated_20250205.pdf](https://raw.githubusercontent.com/guomics-lab/MSDT-Converter/refs/heads/main/MSDT%20v1.0_updated_20250211.pdf) 
 
 ---
 
