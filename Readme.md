@@ -68,8 +68,7 @@ docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.
 ```
 
 
-
-The running times for our test data by step are roughly as follows:
+The running times below were measured on our test data using a single CPU core only, without GPU acceleration or multi-core parallelization. Actual running times may vary depending on input size, hardware and system load.
 
 | | mzml | tims | wiff |
 | :--- | :--- | :--- | :--- |
