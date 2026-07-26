@@ -305,6 +305,40 @@ This section handles direct conversion from other data formats to MSDT.
 
 ---
 
+## 📋 Extract Raw File Metadata (`metadata.py`)
+
+The `scripts/metadata.py` script extracts acquisition metadata from raw mass spectrometry files and exports it as a CSV file.  
+**Supported formats:** `.mzML` (standard open format) and `.d` (Bruker TimsTOF native directory).
+
+### Usage
+
+```bash
+python scripts/metadata.py -raw <input.d or input.mzML> -save <output.csv>
+```
+
+| Parameter | Description |
+| :--- | :--- |
+| **`-raw`** | Path to the raw file: a Bruker `.d` directory or an `.mzML` file. |
+| **`-save`** | Output path for the metadata CSV file. |
+
+### Example
+
+```bash
+# Extract metadata from a Bruker TimsTOF .d folder
+python scripts/metadata.py -raw /data/sample.d -save /data/sample_metadata.csv
+
+# Extract metadata from an mzML file
+python scripts/metadata.py -raw /data/sample.mzML -save /data/sample_metadata.csv
+```
+
+### Output Fields
+
+For Bruker `.d` files, the output includes 33 standardized metadata fields such as `Filename`, `AcquisitionMode` (diaPASEF / ddaPASEF / noPASEF), `InstrumentName`, `AcquisitionDateTime`, `SampleName`, `MethodName`, and more.
+
+For `.mzML` files, the output includes `Filename`, `Instrument`, `FragmentationMode`, `CollisionEnergy`, `Method`, and database search software version info.
+
+---
+
 ## 📚 Citation
 
 When using **MassNet-Converter**, please cite the following publication:
