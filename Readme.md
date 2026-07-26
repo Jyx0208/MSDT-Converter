@@ -3,7 +3,7 @@
 **MassNet-Converter** is a tool for converting commonly used mass spectrometry data formats into the Mass Spectrometry DDA Tensor (MSDT) format—an efficient, standardized, and AI-friendly, 
 schema-rich data representation designed for large-scale proteomics analysis, storage, exchange, and reuse.  
 
-For more detailed information on the MSDT format, including its schema and design rationale, please refer to [MSDT v1.0_updated_20250205.pdf](https://raw.githubusercontent.com/guomics-lab/MSDT-Converter/refs/heads/main/MSDT%20v1.0_updated_20250205.pdf) 
+For more detailed information on the MSDT format, including its schema and design rationale, please refer to [MSDT v1.0_updated_20250211.pdf](https://github.com/guomics-lab/MSDT-Converter/blob/main/MSDT%20v1.0_updated_20250211.pdf) 
 
 ---
 
@@ -39,7 +39,7 @@ All test data and configuration files are available for download via the Google 
 
 ## 💻 Command Line Usage Examples (Docker)
 
-Below are command line examples for running the data conversion using the `guomics2017/msdt-converter:v1.2` Docker image for different instrument data.
+Below are command line examples for running the data conversion using the `guomics2017/msdt-converter:v1.3` Docker image for different instrument data.
 
 > **Note:** Please replace the local path `D:\Work\MSDT_Converter` in the commands with your actual data storage path.
 
@@ -48,7 +48,7 @@ Below are command line examples for running the data conversion using the `guomi
 Uses the `config_mzml.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.2 -config=/home/config_mzml.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.3 -config=/home/config_mzml.json
 ```
 
 ### 2. Bruker Data Conversion
@@ -56,7 +56,7 @@ docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.
 Uses the `config_tims.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.2 -config=/home/config_tims.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.3 -config=/home/config_tims.json
 ```
 
 ### 3. SCIEX Data Conversion
@@ -64,12 +64,11 @@ docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.
 Uses the `config_wiff.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.2 -config=/home/config_wiff.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.3 -config=/home/config_wiff.json
 ```
 
 
-
-The running times for our test data by step are roughly as follows:
+The running times below were measured on our test data using a single CPU core only, without GPU acceleration or multi-core parallelization. Actual running times may vary depending on input size, hardware and system load.
 
 | | mzml | tims | wiff |
 | :--- | :--- | :--- | :--- |
@@ -107,11 +106,11 @@ directory to the container's working directory.
 1. **Ensure the Docker service is running.**
 2. **Pull the Docker Image** from the registry in your terminal:
    ```bash
-   docker pull guomics2017/msdt-converter:v1.2
+   docker pull guomics2017/msdt-converter:v1.3
    ```
 3. **Run the Container** (Example using a typical Linux absolute path):
    ```bash
-   docker run --rm -v /home/user/MassNet-DDA:/home/test_data guomics2017/msdt-converter:v1.2 -config=/home/test_data/config.json
+   docker run --rm -v /home/user/MassNet-DDA:/home/test_data guomics2017/msdt-converter:v1.3 -config=/home/test_data/config.json
    ```
 
 ## Option B: Conda
