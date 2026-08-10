@@ -13,7 +13,7 @@ def mgf_to_parquet(param):
         logger.error(f"Missing {param['mgf_path']}")
         return 2
     try:
-        records = []
+        records: list[dict] = []
         current = None
         field_config = param['field_type_dict']
         with open(param['mgf_path'], "r") as f:

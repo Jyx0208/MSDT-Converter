@@ -26,6 +26,117 @@ For more detailed information on the MSDT format, including its schema and desig
 
 ---
 
+## MSDT-Converter v2 additions
+
+Version 2 adds the missing FragPipe path for WIFF-derived mzML data and can enrich
+FP-derived MSDT Parquet files with the Percolator `score`, `q-value`, and `PEP`
+fields. Matching is performed with the per-run key
+`scan + charge + modified_sequence`; duplicate keys, missing matches, and
+target/decoy label conflicts stop the conversion instead of silently duplicating
+or dropping rows.
+
+FragPipe workflows used by the converter are copied into the result directory and
+the copy is forced to contain:
+
+```text
+percolator.run-percolator=true
+percolator.keep-tsv-files=true
+```
+
+The source workflow is never overwritten.
+
+### Enrich an existing FP Parquet
+
+```bash
+python convert.py enrich \
+  --parquet sample_fp_msdt.parquet \
+  --target-tsv sample_percolator_target_psms.tsv \
+  --decoy-tsv sample_percolator_decoy_psms.tsv \
+  --output sample_fp_msdt_v2.parquet
+```
+
+When the TSVs came from a global Percolator run, select target PSMs at 1% FDR
+while retaining decoys with:
+
+```bash
+python convert.py enrich ... --run-id sample --global-fdr 0.01
+```
+
+### Build a WIFF FP-derived MSDT
+
+The current Linux extractors operate on an mzML converted from the SCIEX
+`.wiff/.wiff.scan` pair. Pass that mzML together with the WIFF-native raw-spectrum
+Parquet, FragPipe PIN, and Percolator TSV files:
+
+```bash
+python convert.py fp-msdt \
+  --instrument wiff \
+  --wiff-mzml sample.mzML \
+  --raw-spectrum sample_rawspectrum.parquet \
+  --pin sample_edited.pin \
+  --target-tsv sample_percolator_target_psms.tsv \
+  --decoy-tsv sample_percolator_decoy_psms.tsv \
+  --output sample_fp_wiff_msdt.parquet
+```
+
+The converter maps FragPipe search scans to WIFF-native scans, validates the map,
+uses the search scan for PSM matching, and writes the native scan to the final
+Parquet.
+
+### Batch FragPipe search with `file_list`
+
+The short format contains one input path per line:
+
+```text
+/data/sample01.mzML
+/data/sample02.mzML
+```
+
+The official four-column FragPipe manifest format is also accepted:
+
+```text
+/data/sample01.mzML	control	1	DDA
+/data/sample02.mzML	treatment	2	DDA
+```
+
+Run the batch search with:
+
+```bash
+python convert.py fp-search \
+  --file-list file_list.tsv \
+  --workdir results \
+  --fasta database.fasta \
+  --workflow default.workflow \
+  --threads 20
+```
+
+### True global FDR
+
+Do not pool scores from separately trained Percolator models. Instead, combine
+compatible PIN files and run Percolator once:
+
+```bash
+python convert.py global-percolator \
+  --pin sample01=/results/sample01_edited.pin \
+  --pin sample02=/results/sample02_edited.pin \
+  --percolator-exe /path/to/percolator \
+  --output-dir /results/global_percolator \
+  --threads 20
+```
+
+Each PIN must have the same feature header and `DefaultDirection`. The converter
+prefixes every PSM identifier with its run ID, writes global target/decoy TSVs,
+and later filters each run before checking the per-run `psm_id` uniqueness.
+`config_global_fdr.example.json` shows the equivalent JSON configuration.
+
+Legacy configuration remains supported:
+
+```bash
+python convert.py -config=config_wiff.json
+```
+
+---
+
 # 📥 Getting the Test Data and Configurations (Google Drive)
 
 We provide test data from **Thermo, SCIEX, and Bruker platforms (in mzML, .d, and MGF formats)**, configuration files for the FragPipe and Sage search engines, and the converted 

@@ -4,8 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 import json
-import re
 import glob
+from dataclasses import dataclass
 
 # Configure logger (accessible by caller)
 logger = logging.getLogger(__name__)
@@ -85,14 +85,105 @@ def generate_sage_search_result_fn(param):
 fragpipe_exe_path = os.path.join(os.getcwd(), 'FragPipe-21.1', 'bin', 'fragpipe')
 
 
+@dataclass(frozen=True)
+class ManifestEntry:
+    path: Path
+    experiment: str = "exp"
+    bioreplicate: str = ""
+    data_type: str = "DDA"
+
+
+def read_file_list(file_list_path):
+    """Read one-path-per-line or official four-column FragPipe input files."""
+    source = Path(file_list_path)
+    if not source.is_file():
+        raise FileNotFoundError(f"FragPipe file_list not found: {source}")
+    entries = []
+    seen_paths = set()
+    for line_number, raw_line in enumerate(
+        source.read_text(encoding="utf-8-sig").splitlines(), start=1
+    ):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = raw_line.rstrip("\r\n").split("\t")
+        if fields[0].strip().lower() in {"path", "file_path", "data_path"}:
+            continue
+        if len(fields) == 1:
+            entry = ManifestEntry(Path(fields[0].strip()))
+        elif len(fields) == 4:
+            entry = ManifestEntry(
+                Path(fields[0].strip()),
+                fields[1].strip(),
+                fields[2].strip(),
+                fields[3].strip(),
+            )
+        else:
+            raise ValueError(
+                f"file_list line {line_number} must have 1 or 4 tab-separated columns"
+            )
+        if not entry.path.exists():
+            raise FileNotFoundError(
+                f"Input from file_list does not exist: {entry.path}"
+            )
+        resolved = entry.path.resolve()
+        if resolved in seen_paths:
+            raise ValueError(f"Duplicate input in file_list: {entry.path}")
+        seen_paths.add(resolved)
+        entries.append(entry)
+    if not entries:
+        raise ValueError(f"file_list contains no inputs: {source}")
+    return entries
+
+
 def build_manifest(file_path, fragpipe_output_path):
+    if isinstance(file_path, ManifestEntry):
+        entries = [file_path]
+    elif isinstance(file_path, (str, os.PathLike)):
+        entries = [ManifestEntry(Path(file_path))]
+    else:
+        entries = list(file_path)
+    if not entries:
+        raise ValueError("Cannot build an empty FragPipe manifest")
+
+    Path(fragpipe_output_path).mkdir(parents=True, exist_ok=True)
     manifest_path = os.path.join(fragpipe_output_path, 'fragpipe-files.fp-manifest')
     logger.info(f'Processing build fragpipe manifest, path is {manifest_path}')
-    #
-    with open(manifest_path, 'w+') as f:
-        f.write(f'{file_path}\texp\t\tDDA')
+    with open(manifest_path, 'w', encoding='utf-8') as f:
+        for entry in entries:
+            f.write(
+                f'{entry.path}\t{entry.experiment}\t{entry.bioreplicate}\t{entry.data_type}\n'
+            )
     logger.info(f'Finished build fragpipe manifest')
-    return manifest_path
+    return Path(manifest_path)
+
+
+def prepare_workflow(workflow_path, destination_path, database_path):
+    """Copy a workflow and force the v2 database/Percolator settings."""
+    source = Path(workflow_path)
+    if not source.is_file():
+        raise FileNotFoundError(f"FragPipe workflow not found: {source}")
+    destination = Path(destination_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    settings = {
+        "database.db-path": str(database_path),
+        "percolator.keep-tsv-files": "true",
+        "percolator.run-percolator": "true",
+    }
+    output_lines = []
+    found = set()
+    for line in source.read_text(encoding="utf-8").splitlines():
+        key = line.split("=", 1)[0] if "=" in line else None
+        if key in settings:
+            output_lines.append(f"{key}={settings[key]}")
+            found.add(key)
+        else:
+            output_lines.append(line)
+    for key, value in settings.items():
+        if key not in found:
+            output_lines.append(f"{key}={value}")
+    destination.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
+    return destination
 
 
 def run_cmd(cmd, cwd=None):
@@ -103,19 +194,24 @@ def run_cmd(cmd, cwd=None):
     env['JAVA_HOME'] = java_home
     cmd_str = ' '.join(cmd)
     logger.info(f'Run cmd: {cmd_str}')
-    p = subprocess.Popen(cmd, env=env, cwd=cwd, stdout=subprocess.PIPE)
-    stdout = p.stdout
-    while True:
-        output = stdout.readline()
-        if output == b'' or (output == '' and p.poll() is not None):
-            break
-        logger.info(output)
-        if output:
-            #
-            info_msg = output.decode('utf-8')
-            info_msg = info_msg.rstrip()
-            if len(info_msg) == 0:
-                continue
+    process = subprocess.Popen(
+        cmd,
+        env=env,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+    )
+    if process.stdout is not None:
+        for line in process.stdout:
+            message = line.rstrip()
+            if message:
+                logger.info(message)
+    return_code = process.wait()
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, cmd)
 
 
 def run_fragpipe(manifest_path, workflow_path, fragpipe_output_path, exe_abs_path, thread_num, fasta_path):
@@ -150,25 +246,12 @@ def run_fragpipe(manifest_path, workflow_path, fragpipe_output_path, exe_abs_pat
     decoyfasta = decoyfasta_list[0]
     
     workflow_dest = os.path.join(fragpipe_output_path, os.path.basename(workflow_path))
-    shutil.copy(workflow_path, workflow_dest)
+    prepare_workflow(workflow_path, workflow_dest, decoyfasta)
     logger.info(f'new workflow file has been generated: {workflow_dest}')
-
-    with open(workflow_dest, 'r') as f:
-        content = f.read()
-    
-    pattern = r'(database\.db-path=).*'
-    replacement = f'database.db-path={decoyfasta}'
-    if re.search(pattern, content):
-        content = re.sub(pattern, replacement, content)
-    else:
-        content += f'\n{replacement}'
-    
-    with open(workflow_dest, 'w') as f:
-        f.write(content)
     logger.info(f'fasta with decoy has been generated: {decoyfasta}')
     
     cmd = [exe_abs_path, '--headless', '--workflow', workflow_dest, '--manifest',
-           manifest_path, '--workdir', fragpipe_output_path,
+           str(manifest_path), '--workdir', fragpipe_output_path,
            '--config-ionQuant', ion_quant_exe_path, '--config-msfragger', msfrag_exe_path,
            '--config-philosopher', philosopher_exe_path, '--threads', str(thread_num)]
     logger.info(f'Processing run fragpipe, command is {cmd}')
@@ -184,25 +267,51 @@ def generate_fp_search_result_fn(param):
         2: Input file does not exist
         -1: Generation failed
     """
-    file_path = param.get('data_path')
-    thread_num = param.get('thread_num')
-    fasta_path = param.get('fasta_path')
-    workflow_path = param.get('workflow_path')
-    workdir = param.get('workdir')
-    os.makedirs(workdir, exist_ok=True)
-    manifest_path = build_manifest(file_path, workdir)
-    run_fragpipe(manifest_path, workflow_path, workdir, fragpipe_exe_path, thread_num, fasta_path)
-    # check bin file
-    base_file_name = os.path.basename(file_path)
-    # find _edited.pin file
-    pin_file_list = list(Path(workdir).rglob(f'{base_file_name}_edited.pin'))
-    if len(pin_file_list) > 0:
-        pin_file_path = pin_file_list[0]
-    else:
-        return -1
-    if os.path.exists(pin_file_path):
-        logger.info(f"generate fragpipe success:")
+    try:
+        file_list = param.get('file_list')
+        data_path = param.get('data_path')
+        if file_list:
+            entries = read_file_list(file_list)
+        elif data_path:
+            input_path = Path(data_path)
+            if not input_path.exists():
+                logger.error(f"Input file does not exist: {input_path}")
+                return 2
+            entries = [ManifestEntry(input_path)]
+        else:
+            raise ValueError("FragPipe search requires data_path or file_list")
+
+        thread_num = int(param.get('thread_num', 1))
+        fasta_path = param.get('fasta_path')
+        workflow_path = param.get('workflow_path')
+        workdir = Path(param.get('workdir'))
+        workdir.mkdir(parents=True, exist_ok=True)
+
+        def find_pin(entry):
+            matches = list(workdir.rglob(f'{entry.path.stem}_edited.pin'))
+            return matches[0] if matches else None
+
+        if all(find_pin(entry) is not None for entry in entries):
+            logger.info("All FragPipe PIN outputs already exist, skipping search")
+            return 1
+
+        manifest_path = build_manifest(entries, workdir)
+        run_fragpipe(
+            manifest_path,
+            workflow_path,
+            str(workdir),
+            fragpipe_exe_path,
+            thread_num,
+            fasta_path,
+        )
+        missing = [str(entry.path) for entry in entries if find_pin(entry) is None]
+        if missing:
+            logger.error(
+                "FragPipe completed without PIN outputs for: " + ", ".join(missing)
+            )
+            return -1
+        logger.info("generate FragPipe search results success")
         return 0
-    else:
-        logger.error(f"generate fragpipe fail")
+    except Exception as error:
+        logger.exception(f"FragPipe search failed: {error}")
         return -1

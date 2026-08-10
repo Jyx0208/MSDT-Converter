@@ -4,6 +4,14 @@ import subprocess
 import pandas as pd
 import numpy as np
 import re
+from pathlib import Path
+from typing import Callable
+
+from scripts.percolator import (
+    enrich_dataframe_with_percolator,
+    normalize_modified_sequence,
+    parse_psm_id,
+)
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -116,7 +124,16 @@ def gen_mzml_tims_sage_msdt(raw_data_path, search_result_path, output_path, unif
         logger.error(f"Error occurs when generate {output_path}: {e}")
         return -1
     
-def gen_mzml_fragpipe_msdt(raw_data_path, fp_pin_path, output_path, unify_residue):
+def gen_mzml_fragpipe_msdt(
+    raw_data_path,
+    fp_pin_path,
+    output_path,
+    unify_residue,
+    percolator_target_path=None,
+    percolator_decoy_path=None,
+    run_id=None,
+    fdr_threshold=None,
+):
     try:
         raw_df = pd.read_parquet(raw_data_path)
         if 'ion_mobility' in raw_df.columns:
@@ -125,34 +142,211 @@ def gen_mzml_fragpipe_msdt(raw_data_path, fp_pin_path, output_path, unify_residu
             raw_df = raw_df[['scan','precursor_mz','rt','mz_array','intensity_array']]
         raw_df = raw_df.dropna(subset=['scan', 'mz_array','intensity_array'])
         raw_df['scan'] = raw_df['scan'].astype(int)
-        raw_df['mz_array'] = raw_df['mz_array'].str.split(',').map(lambda x: np.array(x, dtype='float32'))
-        raw_df['intensity_array'] = raw_df['intensity_array'].str.split(',').map(lambda x: np.array(x, dtype='float32'))
+        raw_df['mz_array'] = raw_df['mz_array'].map(lambda x: np.asarray(x.split(',') if isinstance(x, str) else x, dtype='float32'))
+        raw_df['intensity_array'] = raw_df['intensity_array'].map(lambda x: np.asarray(x.split(',') if isinstance(x, str) else x, dtype='float32'))
 
         # read fp_sr decoy
         need_cols = ['SpecId', 'Label', 'ScanNr', 'ExpMass', 'retentiontime', 'rank', 'isotope_errors', 'hyperscore', 'delta_hyperscore', 'matched_ion_num', 'ion_series', 'unweighted_spectral_entropy', 'delta_RT_loess', 'Peptide', 'Proteins']
         fp_sr_df = pd.read_csv(fp_pin_path, sep='\t',usecols=need_cols)
         fp_sr_df = fp_sr_df.rename(columns={'ScanNr': 'scan', 'Label':'label', 'Proteins': 'proteins'})
-        assert len(fp_sr_df) == len(set(fp_sr_df['scan'])), ""
-        fp_sr_df['label'] = fp_sr_df['label'].replace(-1, 0)
-        fp_sr_df['charge'] = fp_sr_df['SpecId'].apply(lambda x: int(x.split('.')[-1].split('_')[0]))
-        
-        def remove_trailing_numbers(s):
-            return re.sub(r'\d+$', '', s)
+        fp_sr_df['scan'] = fp_sr_df['scan'].astype(int)
+        fp_sr_df['label'] = fp_sr_df['label'].replace(-1, 0).astype('int8')
+        fp_sr_df['charge'] = fp_sr_df['SpecId'].map(lambda value: parse_psm_id(value)[1])
         
         if unify_residue:
-            fp_sr_df['precursor_sequence'] = fp_sr_df['Peptide'].apply(lambda x: clean_psm_func(x[2:-2], residues_frag))
+            fp_sr_df['precursor_sequence'] = fp_sr_df['Peptide'].map(normalize_modified_sequence)
         else:
-            fp_sr_df['precursor_sequence'] = fp_sr_df['Peptide'].apply(lambda x: remove_trailing_numbers(x[2:-2]))
+            fp_sr_df['precursor_sequence'] = fp_sr_df['Peptide'].map(lambda value: re.sub(r'^[A-Za-z-]\.(.+)\.[A-Za-z-]$', r'\1', str(value)))
         fp_sr_df = fp_sr_df[['scan', 'label', 'charge', 'ExpMass', 'retentiontime', 'rank', 'isotope_errors', 'hyperscore', 'delta_hyperscore', 'matched_ion_num', 'ion_series', 'unweighted_spectral_entropy', 'delta_RT_loess', 'precursor_sequence', 'proteins']]
 
-        fp_parquet_df = fp_sr_df.merge(raw_df, on='scan', how='inner')
-        assert len(fp_parquet_df) == len(fp_sr_df)
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        fp_parquet_df.to_parquet(output_path)
+        fp_parquet_df = fp_sr_df.merge(raw_df, on='scan', how='left', validate='many_to_one', indicator=True)
+        unmatched = fp_parquet_df['_merge'] != 'both'
+        if unmatched.any():
+            examples = fp_parquet_df.loc[unmatched, 'scan'].head(5).tolist()
+            raise ValueError(f"FragPipe scans missing from raw spectra: {examples}")
+        fp_parquet_df = fp_parquet_df.drop(columns='_merge')
+        if percolator_target_path and percolator_decoy_path:
+            fp_parquet_df, _ = enrich_dataframe_with_percolator(
+                fp_parquet_df,
+                percolator_target_path,
+                percolator_decoy_path,
+                run_id=run_id,
+                fdr_threshold=fdr_threshold,
+            )
+        elif percolator_target_path or percolator_decoy_path:
+            raise ValueError("Both Percolator target and decoy TSV paths are required")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        fp_parquet_df.to_parquet(output_path, index=False)
         return 0
     except Exception as e:
         logger.error(f"Error occurs when generate {output_path}: {e}")
         return -1
+
+
+def gen_wiff_fragpipe_msdt(
+    raw_data_path,
+    wiff_mzml_path,
+    fp_pin_path,
+    percolator_target_path,
+    percolator_decoy_path,
+    output_path,
+    unify_residue=True,
+    *,
+    run_id=None,
+    fdr_threshold=None,
+    mzml_extractor=deal_mzml_rawspectrum,
+    runner: Callable = subprocess.run,
+):
+    """Generate a Percolator-enriched FP MSDT while preserving WIFF scans."""
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    search_scan_tsv = output.parent / f"{Path(wiff_mzml_path).stem}_search_scans.tsv"
+    try:
+        runner(
+            [str(mzml_extractor), str(wiff_mzml_path), str(search_scan_tsv)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if not search_scan_tsv.is_file():
+            raise RuntimeError(
+                f"mzML extractor did not create search-scan TSV: {search_scan_tsv}"
+            )
+
+        raw_df = pd.read_parquet(raw_data_path)
+        required_raw = {
+            "scan",
+            "precursor_mz",
+            "rt",
+            "mz_array",
+            "intensity_array",
+        }
+        missing_raw = sorted(required_raw.difference(raw_df.columns))
+        if missing_raw:
+            raise ValueError(
+                "WIFF raw-spectrum Parquet is missing columns: "
+                + ", ".join(missing_raw)
+            )
+        search_scans = pd.read_csv(search_scan_tsv, sep="\t", usecols=["scan"])
+        if len(raw_df) != len(search_scans):
+            raise ValueError(
+                "WIFF native/search scan row counts differ: "
+                f"{len(raw_df)} != {len(search_scans)}"
+            )
+        if raw_df["scan"].duplicated().any():
+            raise ValueError("WIFF native scan values are not unique")
+        if search_scans["scan"].duplicated().any():
+            raise ValueError("WIFF search scan values are not unique")
+
+        raw_df = raw_df[
+            ["scan", "precursor_mz", "rt", "mz_array", "intensity_array"]
+        ].copy()
+        raw_df["search_scan"] = search_scans["scan"].astype(int).to_numpy()
+        raw_df = raw_df.dropna(subset=["scan", "mz_array", "intensity_array"])
+        raw_df["scan"] = raw_df["scan"].astype(int)
+
+        def to_float_array(value):
+            if isinstance(value, str):
+                value = value.split(",")
+            return np.asarray(value, dtype="float32")
+
+        raw_df["mz_array"] = raw_df["mz_array"].map(to_float_array)
+        raw_df["intensity_array"] = raw_df["intensity_array"].map(
+            to_float_array
+        )
+
+        need_cols = [
+            "SpecId",
+            "Label",
+            "ScanNr",
+            "ExpMass",
+            "retentiontime",
+            "rank",
+            "isotope_errors",
+            "hyperscore",
+            "delta_hyperscore",
+            "matched_ion_num",
+            "ion_series",
+            "unweighted_spectral_entropy",
+            "delta_RT_loess",
+            "Peptide",
+            "Proteins",
+        ]
+        fp_df = pd.read_csv(fp_pin_path, sep="\t", usecols=need_cols)
+        fp_df = fp_df.rename(
+            columns={
+                "ScanNr": "search_scan",
+                "Label": "label",
+                "Proteins": "proteins",
+            }
+        )
+        fp_df["search_scan"] = fp_df["search_scan"].astype(int)
+        fp_df["label"] = fp_df["label"].replace(-1, 0).astype("int8")
+        fp_df["charge"] = fp_df["SpecId"].map(
+            lambda value: parse_psm_id(value)[1]
+        )
+        if unify_residue:
+            fp_df["precursor_sequence"] = fp_df["Peptide"].map(
+                normalize_modified_sequence
+            )
+        else:
+            fp_df["precursor_sequence"] = fp_df["Peptide"].map(
+                lambda value: re.sub(
+                    r"^[A-Za-z-]\.(.+)\.[A-Za-z-]$", r"\1", str(value)
+                )
+            )
+        fp_df = fp_df[
+            [
+                "search_scan",
+                "label",
+                "charge",
+                "ExpMass",
+                "retentiontime",
+                "rank",
+                "isotope_errors",
+                "hyperscore",
+                "delta_hyperscore",
+                "matched_ion_num",
+                "ion_series",
+                "unweighted_spectral_entropy",
+                "delta_RT_loess",
+                "precursor_sequence",
+                "proteins",
+            ]
+        ]
+        base_msdt = fp_df.merge(
+            raw_df,
+            on="search_scan",
+            how="left",
+            validate="many_to_one",
+            indicator=True,
+        )
+        unmatched_scan = base_msdt["_merge"] != "both"
+        if unmatched_scan.any():
+            examples = (
+                base_msdt.loc[unmatched_scan, "search_scan"].head(5).tolist()
+            )
+            raise ValueError(
+                "FragPipe search scans missing from WIFF scan map: "
+                + ", ".join(str(value) for value in examples)
+            )
+        base_msdt = base_msdt.drop(columns="_merge")
+        enriched, _ = enrich_dataframe_with_percolator(
+            base_msdt,
+            percolator_target_path,
+            percolator_decoy_path,
+            run_id=run_id,
+            scan_column="search_scan",
+            fdr_threshold=fdr_threshold,
+        )
+        enriched = enriched.drop(columns="search_scan")
+        enriched.to_parquet(output, index=False)
+        return 0
+    except Exception as error:
+        logger.exception(f"Error occurs when generating WIFF FP MSDT {output}: {error}")
+        return -1
+    finally:
+        search_scan_tsv.unlink(missing_ok=True)
     
 def gen_wiff_sage_msdt(raw_data_path, wiff_mzml_path, search_result_path, output_path, unify_residue):
     try:
@@ -227,124 +421,134 @@ def gen_wiff_sage_msdt(raw_data_path, wiff_mzml_path, search_result_path, output
         return -1
     
 def generate_msdt_fn(param):
-    """
-    Generate a rawspectrum file.
-    Return values:
-        0: Successfully generated
-        1: Already exists, no need to generate
-        2: Input file does not exist
-        -1: Generation failed
-    """
-    # tims
-    tims_need = param.get('tims')['need_tims']
-    tims_rawspectrum_path = param.get('tims')['rawspectrum_path']
-    tims_sage_search_result_path = param.get('tims')['sage_search_result_path']
-    tims_unify_residue = param.get('tims')['unify_residue']
-    tims_output = param.get('tims')['output']
-    tims_state = -1
-    if tims_need:
-        if os.path.exists(tims_output):
-            logger.info(f"tims_output already done: {tims_output}, skip")
-            tims_state = 1
-        elif not os.path.exists(tims_sage_search_result_path):
-            logger.error(f"miss tims_sage_search_result_path: {tims_sage_search_result_path}")
-            tims_state = 2
-        elif not os.path.exists(tims_rawspectrum_path):
-            logger.error(f"miss tims_rawspectrum_path: {tims_rawspectrum_path}")
-            tims_state = 2
-        else:
-            tims_state = gen_mzml_tims_sage_msdt(tims_rawspectrum_path, tims_sage_search_result_path, tims_output, tims_unify_residue)
-        
-    # mzml
-    mzml_need = param.get('mzml')['need_mzml']
-    mzml_need_sage = param.get('mzml')['need_sage']
-    mzml_need_fragpipe = param.get('mzml')['need_fragpipe']
-    mzml_rawspectrum_path = param.get('mzml')['rawspectrum_path']
-    mzml_sage_search_result_path = param.get('mzml')['sage_search_result_path']
-    mzml_fp_pin_path = param.get('mzml')['fp_pin_path']
-    mzml_sage_unify_residue = param.get('mzml')['sage_unify_residue']
-    mzml_fp_unify_residue = param.get('mzml')['fp_unify_residue']
-    mzml_sage_output = param.get('mzml')['sage_output']
-    mzml_fp_output = param.get('mzml')['fp_output']
-    mzml_sage_state = -1
-    mzml_fp_state = -1
-    if mzml_need:
-        if mzml_need_sage:
-            if os.path.exists(mzml_sage_output):
-                logger.info(f"mzml_sage_output already done: {mzml_sage_output}, skip")
-                mzml_sage_state = 1
-            elif not os.path.exists(mzml_rawspectrum_path):
-                logger.error(f"miss mzml_rawspectrum_path: {mzml_rawspectrum_path}")
-                mzml_sage_state = 2
-            elif not os.path.exists(mzml_sage_search_result_path):
-                logger.error(f"miss mzml_sage_search_result_path: {mzml_sage_search_result_path}")
-                mzml_sage_state = 2
-            else:
-                mzml_sage_state = gen_mzml_tims_sage_msdt(mzml_rawspectrum_path, mzml_sage_search_result_path, mzml_sage_output, mzml_sage_unify_residue)
-        else:
-            mzml_sage_state = 0
-                
-        if mzml_need_fragpipe:
-            
-            if os.path.exists(mzml_fp_output):
-                logger.info(f"mzml_fp_output already done: {mzml_fp_output}, skip")
-                mzml_fp_state = 1
-            elif not os.path.exists(mzml_rawspectrum_path):
-                logger.error(f"miss mzml_rawspectrum_path: {mzml_rawspectrum_path}")
-                mzml_fp_state = 2
-            elif not os.path.exists(mzml_fp_pin_path):
-                logger.error(f"miss mzml_fp_pin_path: {mzml_fp_pin_path}")
-                mzml_fp_state = 2
-            else:
-                mzml_fp_state = gen_mzml_fragpipe_msdt(mzml_rawspectrum_path, mzml_fp_pin_path, mzml_fp_output, mzml_fp_unify_residue)
-        else:
-            mzml_fp_state = 0
-    
-    # wiff
-    wiff_need = param.get('wiff')['need_wiff']
-    wiff_mzml_path = param.get('wiff')['wiff_mzml_path']
-    wiff_rawspectrum_path = param.get('wiff')['rawspectrum_path']
-    wiff_sage_search_result_path = param.get('wiff')['sage_search_result_path']
-    wiff_unify_residue = param.get('wiff')['unify_residue']
-    wiff_output = param.get('wiff')['output']
-    wiff_state = -1
-    if wiff_need:
-        if os.path.exists(wiff_output):
-            logger.info(f"wiff_output already done: {wiff_output}, skip")
-            wiff_state = 1
-        elif not os.path.exists(wiff_rawspectrum_path):
-            logger.error(f"miss wiff_rawspectrum_path: {wiff_rawspectrum_path}")
-            wiff_state = 2
-        elif not os.path.exists(wiff_mzml_path):
-            logger.error(f"miss wiff_mzml_path: {wiff_mzml_path}")
-            wiff_state = 2
-        elif not os.path.exists(wiff_sage_search_result_path):
-            logger.error(f"miss wiff_sage_search_result_path: {wiff_sage_search_result_path}")
-            wiff_state = 2
-        else:
-            wiff_state = gen_wiff_sage_msdt(wiff_rawspectrum_path, wiff_mzml_path, wiff_sage_search_result_path, wiff_output, wiff_unify_residue)
-    
-    result_state = 0
-    done_parquet_list = []
-    if mzml_need:
-        if mzml_sage_state != 0 or mzml_fp_state != 0:
-            result_state = -1
-        done_parquet_list.append(mzml_sage_output)
-        done_parquet_list.append(mzml_fp_output)
-    if tims_need:
-        if tims_state != 0:
-            result_state = -1
-        done_parquet_list.append(tims_output)
-    if wiff_need:
-        if wiff_state != 0:
-            result_state = -1
-        done_parquet_list.append(wiff_output)
-    
-    if result_state == 0:
-        logger.info(f"generate msdt success:")
-        for i in done_parquet_list:
-            logger.info(f"    generate msdt: {i} success")
+    """Generate all enabled MSDT variants, including WIFF FragPipe output."""
+    states = []
+    outputs = []
+
+    def missing(paths):
+        absent = [str(path) for path in paths if not path or not Path(path).exists()]
+        if absent:
+            logger.error("Missing MSDT inputs: %s", ", ".join(absent))
+            states.append(2)
+            return True
+        return False
+
+    tims = param.get("tims", {})
+    if tims.get("need_tims", False):
+        output = tims.get("output")
+        outputs.append(output)
+        if output and Path(output).exists():
+            states.append(1)
+        elif not missing(
+            [tims.get("rawspectrum_path"), tims.get("sage_search_result_path")]
+        ):
+            states.append(
+                gen_mzml_tims_sage_msdt(
+                    tims["rawspectrum_path"],
+                    tims["sage_search_result_path"],
+                    output,
+                    tims.get("unify_residue", True),
+                )
+            )
+
+    mzml = param.get("mzml", {})
+    if mzml.get("need_mzml", False):
+        raw_path = mzml.get("rawspectrum_path")
+        if mzml.get("need_sage", False):
+            output = mzml.get("sage_output")
+            outputs.append(output)
+            if output and Path(output).exists():
+                states.append(1)
+            elif not missing([raw_path, mzml.get("sage_search_result_path")]):
+                states.append(
+                    gen_mzml_tims_sage_msdt(
+                        raw_path,
+                        mzml["sage_search_result_path"],
+                        output,
+                        mzml.get("sage_unify_residue", True),
+                    )
+                )
+        if mzml.get("need_fragpipe", False):
+            output = mzml.get("fp_output")
+            outputs.append(output)
+            percolator_target = mzml.get("percolator_target_path")
+            percolator_decoy = mzml.get("percolator_decoy_path")
+            required = [raw_path, mzml.get("fp_pin_path")]
+            if percolator_target or percolator_decoy:
+                required.extend([percolator_target, percolator_decoy])
+            if output and Path(output).exists():
+                states.append(1)
+            elif not missing(required):
+                states.append(
+                    gen_mzml_fragpipe_msdt(
+                        raw_path,
+                        mzml["fp_pin_path"],
+                        output,
+                        mzml.get("fp_unify_residue", True),
+                        percolator_target,
+                        percolator_decoy,
+                        mzml.get("run_id"),
+                        mzml.get("fdr_threshold"),
+                    )
+                )
+
+    wiff = param.get("wiff", {})
+    if wiff.get("need_wiff", False):
+        raw_path = wiff.get("rawspectrum_path")
+        mzml_path = wiff.get("wiff_mzml_path")
+        need_sage = wiff.get("need_sage", "need_fragpipe" not in wiff)
+        if need_sage:
+            output = wiff.get("sage_output", wiff.get("output"))
+            outputs.append(output)
+            if output and Path(output).exists():
+                states.append(1)
+            elif not missing(
+                [raw_path, mzml_path, wiff.get("sage_search_result_path")]
+            ):
+                states.append(
+                    gen_wiff_sage_msdt(
+                        raw_path,
+                        mzml_path,
+                        wiff["sage_search_result_path"],
+                        output,
+                        wiff.get(
+                            "sage_unify_residue", wiff.get("unify_residue", True)
+                        ),
+                    )
+                )
+        if wiff.get("need_fragpipe", False):
+            output = wiff.get("fp_output")
+            outputs.append(output)
+            required = [
+                raw_path,
+                mzml_path,
+                wiff.get("fp_pin_path"),
+                wiff.get("percolator_target_path"),
+                wiff.get("percolator_decoy_path"),
+            ]
+            if output and Path(output).exists():
+                states.append(1)
+            elif not missing(required):
+                states.append(
+                    gen_wiff_fragpipe_msdt(
+                        raw_path,
+                        mzml_path,
+                        wiff["fp_pin_path"],
+                        wiff["percolator_target_path"],
+                        wiff["percolator_decoy_path"],
+                        output,
+                        wiff.get("fp_unify_residue", True),
+                        run_id=wiff.get("run_id"),
+                        fdr_threshold=wiff.get("fdr_threshold"),
+                    )
+                )
+
+    if not states:
+        logger.info("No MSDT variants enabled")
         return 0
-    else:
-        logger.error(f"generate msdt fail")
-        return -1
+    if all(state in (0, 1) for state in states):
+        for output in outputs:
+            logger.info("generate MSDT success: %s", output)
+        return 0
+    logger.error("generate MSDT failed; states=%s", states)
+    return -1
