@@ -64,9 +64,11 @@ python convert.py enrich ... --run-id sample --global-fdr 0.01
 
 ### Build a WIFF FP-derived MSDT
 
-The current Linux extractors operate on an mzML converted from the SCIEX
-`.wiff/.wiff.scan` pair. Pass that mzML together with the WIFF-native raw-spectrum
-Parquet, FragPipe PIN, and Percolator TSV files:
+The current Linux extractors cannot read the proprietary SCIEX `.wiff/.wiff.scan`
+pair directly. Convert the pair to mzML first with a SCIEX-compatible converter
+(for example ProteoWizard/MSConvert on a supported Windows installation), then
+pass that mzML together with the WIFF-native raw-spectrum Parquet, FragPipe PIN,
+and Percolator TSV files:
 
 ```bash
 python convert.py fp-msdt \
@@ -79,9 +81,11 @@ python convert.py fp-msdt \
   --output sample_fp_wiff_msdt.parquet
 ```
 
-The converter maps FragPipe search scans to WIFF-native scans, validates the map,
-uses the search scan for PSM matching, and writes the native scan to the final
-Parquet.
+The converter maps FragPipe search scans to WIFF-native scans, cross-validates
+each positional mapping with retention time and precursor m/z, uses the search
+scan for PSM matching, and writes the native scan to the final Parquet. A row
+count, ordering, RT, or precursor-m/z mismatch stops conversion instead of
+silently assigning the wrong native scan.
 
 ### Batch FragPipe search with `file_list`
 
@@ -373,11 +377,20 @@ This section contains nested configurations based on data type (`tims`, `mzml`, 
 | Parameter | Data Type | Example Value | Description |
 | :--- | :--- | :--- | :--- |
 | **`need_wiff`** | `boolean` | `false` | Set to `true` to generate MSDT from **WIFF** related data (not currently configured in the example). |
+| **`need_sage`** | `boolean` | `true` | Set to `true` to generate a Sage-derived WIFF MSDT. |
+| **`need_fragpipe`** | `boolean` | `true` | Set to `true` to generate a FragPipe/Percolator-derived WIFF MSDT. |
 | **`wiff_mzml_path`** | `string` | `""` | **Input.** Path to the mzML file converted from WIFF. |
 | **`rawspectrum_path`** | `string` | `""` | **Input.** Path to the raw spectrum file. |
 | **`sage_search_result_path`** | `string` | `""` | **Input.** Path to the Sage search result file. |
-| **`unify_residue`** | `boolean` | `true` | If `true`, the residue format will be converted to the unified MSDT format. |
-| **`output`** | `string` | `""` | **Output.** Path for the generated Sage MSDT file. |
+| **`fp_pin_path`** | `string` | `""` | **Input.** FragPipe edited PIN used to build the FP MSDT rows. |
+| **`percolator_target_path`** | `string` | `""` | **Input.** Percolator target PSM TSV retained by the workflow. |
+| **`percolator_decoy_path`** | `string` | `""` | **Input.** Percolator decoy PSM TSV retained by the workflow. |
+| **`run_id`** | `string` | `"sample01"` | Run prefix used in global Percolator TSVs; omit only for per-run TSVs. |
+| **`fdr_threshold`** | `number` | `0.01` | Optional q-value threshold for targets; all decoys are retained. |
+| **`sage_unify_residue`** | `boolean` | `true` | Normalize Sage modified sequences to the MSDT representation. |
+| **`fp_unify_residue`** | `boolean` | `true` | Normalize FragPipe/Percolator modified sequences before PSM matching. |
+| **`sage_output`** | `string` | `""` | **Output.** Path for the generated Sage MSDT file. |
+| **`fp_output`** | `string` | `""` | **Output.** Path for the FP-derived MSDT containing `score`, `q-value`, and `PEP`. |
 
 ---
 

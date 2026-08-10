@@ -79,15 +79,14 @@ class PercolatorPsmTests(unittest.TestCase):
             decoy_path = root / "decoy.tsv"
             pd.DataFrame(
                 {
-                    "scan": [101, 102, 999],
-                    "charge": [2, 3, 2],
+                    "scan": [101, 102],
+                    "charge": [2, 3],
                     "precursor_sequence": [
                         "AC[57.02]DM[15.99]",
                         "PEPTIDE",
-                        "UNMATCHED",
                     ],
-                    "label": [1, 0, 1],
-                    "precursor_mz": [500.2, 600.3, 700.4],
+                    "label": [1, 0],
+                    "precursor_mz": [500.2, 600.3],
                 }
             ).to_parquet(input_path, index=False)
             pd.DataFrame(
@@ -109,9 +108,54 @@ class PercolatorPsmTests(unittest.TestCase):
             self.assertEqual(result["score"].tolist(), [5.2, -1.2])
             self.assertEqual(result["q-value"].tolist(), [0.001, 0.4])
             self.assertEqual(result["PEP"].tolist(), [0.002, 0.8])
-            self.assertEqual(report.input_rows, 3)
+            self.assertEqual(report.input_rows, 2)
             self.assertEqual(report.matched_rows, 2)
-            self.assertEqual(report.unmatched_input_rows, 1)
+            self.assertEqual(report.unmatched_input_rows, 0)
+
+    def test_unmatched_parquet_psm_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_path = root / "input.parquet"
+            target_path = root / "target.tsv"
+            decoy_path = root / "decoy.tsv"
+            pd.DataFrame(
+                {
+                    "scan": [101, 999],
+                    "charge": [2, 2],
+                    "precursor_sequence": ["PEPTIDE", "UNMATCHED"],
+                    "label": [1, 1],
+                }
+            ).to_parquet(input_path, index=False)
+            pd.DataFrame(
+                [["run.101.101.2_1", 5.2, 0.001, 0.002, "K.PEPTIDE.R", "P1"]],
+                columns=PERCOLATOR_COLUMNS,
+            ).to_csv(target_path, sep="\t", index=False)
+            pd.DataFrame(columns=PERCOLATOR_COLUMNS).to_csv(
+                decoy_path, sep="\t", index=False
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "MSDT Parquet PSMs missing from Percolator TSVs.*999_2_UNMATCHED"
+            ):
+                enrich_parquet_with_percolator(
+                    input_path, target_path, decoy_path, root / "output.parquet"
+                )
+
+    def test_empty_percolator_metric_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            target_path = root / "target.tsv"
+            decoy_path = root / "decoy.tsv"
+            pd.DataFrame(
+                [["run.101.101.2_1", 5.2, None, 0.002, "K.PEPTIDE.R", "P1"]],
+                columns=PERCOLATOR_COLUMNS,
+            ).to_csv(target_path, sep="\t", index=False)
+            pd.DataFrame(columns=PERCOLATOR_COLUMNS).to_csv(
+                decoy_path, sep="\t", index=False
+            )
+
+            with self.assertRaisesRegex(ValueError, "empty or non-finite"):
+                load_percolator_psms(target_path, decoy_path)
 
     def test_global_tsv_can_be_filtered_by_run_before_duplicate_check(self):
         with tempfile.TemporaryDirectory() as temp_dir:

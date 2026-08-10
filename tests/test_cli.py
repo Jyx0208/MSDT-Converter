@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from convert import main
+from convert import _resolve_global_run_id, main
 
 
 PERCOLATOR_COLUMNS = [
@@ -70,6 +70,16 @@ class CliTests(unittest.TestCase):
             config.write_text(json.dumps({}), encoding="utf-8")
 
             self.assertEqual(main(["-config", str(config)]), 0)
+
+    def test_global_run_id_comes_from_pin_mapping_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pin = Path(temp_dir) / "filename_does_not_match_run.pin"
+            pin.write_text("fixture", encoding="utf-8")
+
+            self.assertEqual(
+                _resolve_global_run_id(pin, {"declared_run": str(pin)}),
+                "declared_run",
+            )
 
 
 if __name__ == "__main__":

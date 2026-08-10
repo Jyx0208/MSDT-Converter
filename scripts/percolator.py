@@ -125,6 +125,19 @@ def _read_psms(
     frame["PEP"] = pd.to_numeric(
         frame["posterior_error_prob"], errors="raise"
     )
+    metric_columns = ["score", "q-value", "PEP"]
+    finite_metrics = np.isfinite(frame[metric_columns].to_numpy(dtype=float))
+    if frame[metric_columns].isna().any().any() or not finite_metrics.all():
+        invalid_columns = [
+            column
+            for column in metric_columns
+            if frame[column].isna().any()
+            or not np.isfinite(frame[column].to_numpy(dtype=float)).all()
+        ]
+        raise ValueError(
+            f"Percolator TSV {source} contains empty or non-finite values in: "
+            + ", ".join(invalid_columns)
+        )
     return frame[
         [
             "psm_id",
@@ -211,30 +224,47 @@ def enrich_dataframe_with_percolator(
     if fdr_threshold is not None:
         if not 0 <= fdr_threshold <= 1:
             raise ValueError("fdr_threshold must be between 0 and 1")
-        psms = psms[
-            (psms["label"] == 0) | (psms["q-value"] <= fdr_threshold)
-        ].copy()
-    matched = psms.merge(
-        parquet,
+
+    parquet_ids = set(parquet["psm_id"])
+    percolator_ids = set(psms["psm_id"])
+    missing_from_parquet = psms.loc[
+        ~psms["psm_id"].isin(parquet_ids), "psm_id"
+    ].head(5)
+    if not missing_from_parquet.empty:
+        raise ValueError(
+            "Percolator PSMs missing from MSDT Parquet: "
+            + ", ".join(missing_from_parquet.tolist())
+        )
+    missing_from_percolator = parquet.loc[
+        ~parquet["psm_id"].isin(percolator_ids), "psm_id"
+    ].head(5)
+    if not missing_from_percolator.empty:
+        raise ValueError(
+            "MSDT Parquet PSMs missing from Percolator TSVs: "
+            + ", ".join(missing_from_percolator.tolist())
+        )
+
+    matched = parquet.merge(
+        psms,
         on="psm_id",
         how="left",
         validate="one_to_one",
-        suffixes=("_percolator", ""),
-        indicator=True,
+        suffixes=("", "_percolator"),
     )
-    missing_match = matched["_merge"] != "both"
-    if missing_match.any():
-        examples = matched.loc[missing_match, "psm_id"].head(5).tolist()
-        raise ValueError(
-            "Percolator PSMs missing from MSDT Parquet: " + ", ".join(examples)
-        )
 
-    label_mismatch = matched["label_percolator"] != matched["label"]
+    label_mismatch = matched["label"] != matched["label_percolator"]
     if label_mismatch.any():
         examples = matched.loc[label_mismatch, "psm_id"].head(5).tolist()
         raise ValueError(
             "Target/decoy label mismatch for PSMs: " + ", ".join(examples)
         )
+
+    matched_rows = len(matched)
+    if fdr_threshold is not None:
+        matched = matched[
+            (matched["label_percolator"] == 0)
+            | (matched["q-value"] <= fdr_threshold)
+        ].copy()
 
     output = matched.drop(
         columns=[
@@ -243,16 +273,13 @@ def enrich_dataframe_with_percolator(
             "charge_percolator",
             "modified_sequence",
             "label_percolator",
-            "_merge",
         ]
     )
-    matched_ids = set(psms["psm_id"])
-    unmatched_input_rows = int((~parquet["psm_id"].isin(matched_ids)).sum())
     report = EnrichmentReport(
         input_rows=len(parquet),
         percolator_rows=len(psms),
-        matched_rows=len(output),
-        unmatched_input_rows=unmatched_input_rows,
+        matched_rows=matched_rows,
+        unmatched_input_rows=0,
         output_rows=len(output),
     )
     return output, report

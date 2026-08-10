@@ -91,9 +91,22 @@ def parse_config(config: dict) -> dict:
     return steps
 
 
-def _derive_run_id(pin_path: str | Path) -> str:
-    stem = Path(pin_path).stem
-    return stem[:-7] if stem.endswith("_edited") else stem
+def _resolve_global_run_id(
+    pin_path: str | Path, pin_files: dict[str, str | Path]
+) -> str:
+    """Resolve a PIN to the exact run ID used to prefix the global PIN."""
+    requested = Path(pin_path).expanduser().resolve(strict=False)
+    matches = [
+        run_id
+        for run_id, candidate in pin_files.items()
+        if Path(candidate).expanduser().resolve(strict=False) == requested
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"PIN path {pin_path} must occur exactly once in "
+            "global_percolator.pin_files"
+        )
+    return matches[0]
 
 
 def execute_steps(steps: dict) -> int:
@@ -142,8 +155,22 @@ def execute_steps(steps: dict) -> int:
                         global_artifacts.decoy_tsv
                     )
                     params["fdr_threshold"] = threshold
-                    if not params.get("run_id") and params.get("fp_pin_path"):
-                        params["run_id"] = _derive_run_id(params["fp_pin_path"])
+                    if not params.get("fp_pin_path"):
+                        raise ValueError(
+                            f"generate_msdt.{data_type}.fp_pin_path is required "
+                            "for global FDR"
+                        )
+                    mapped_run_id = _resolve_global_run_id(
+                        params["fp_pin_path"], pin_files
+                    )
+                    configured_run_id = params.get("run_id")
+                    if configured_run_id and configured_run_id != mapped_run_id:
+                        raise ValueError(
+                            f"generate_msdt.{data_type}.run_id "
+                            f"({configured_run_id}) does not match the global PIN "
+                            f"mapping key ({mapped_run_id})"
+                        )
+                    params["run_id"] = mapped_run_id
         states.append(generate_msdt_fn(msdt_params))
     if "convert_2_msdt" in steps:
         states.append(mgf_to_parquet(steps["convert_2_msdt"]["mgf"]))
@@ -231,7 +258,13 @@ def create_parser() -> argparse.ArgumentParser:
     build.add_argument("--target-tsv", required=True)
     build.add_argument("--decoy-tsv", required=True)
     build.add_argument("--output", required=True)
-    build.add_argument("--wiff-mzml")
+    build.add_argument(
+        "--wiff-mzml",
+        help=(
+            "mzML converted from the SCIEX .wiff/.wiff.scan pair; "
+            "native WIFF conversion is performed outside this Linux tool"
+        ),
+    )
     build.add_argument("--run-id")
     build.add_argument("--global-fdr", type=float)
     build.add_argument("--no-unify-residue", action="store_true")

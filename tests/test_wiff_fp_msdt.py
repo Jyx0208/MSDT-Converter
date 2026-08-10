@@ -78,7 +78,13 @@ class WiffFragPipeMsdtTests(unittest.TestCase):
 
             def fake_runner(command, **kwargs):
                 search_scan_tsv = Path(command[2])
-                pd.DataFrame({"scan": [101, 102]}).to_csv(
+                pd.DataFrame(
+                    {
+                        "scan": [101, 102],
+                        "precursor_mz": [500.2, 600.3],
+                        "rt": [10.0, 11.0],
+                    }
+                ).to_csv(
                     search_scan_tsv, sep="\t", index=False
                 )
                 return subprocess.CompletedProcess(command, 0, "", "")
@@ -102,6 +108,57 @@ class WiffFragPipeMsdtTests(unittest.TestCase):
             self.assertEqual(result["score"].tolist(), [5.0, 4.0, -1.0])
             self.assertNotIn("search_scan", result.columns)
             self.assertFalse(result[["score", "q-value", "PEP"]].isna().any().any())
+
+    def test_reordered_native_and_search_spectra_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            native_raw = root / "native_raw.parquet"
+            wiff_mzml = root / "sample.mzML"
+            fp_pin = root / "sample_edited.pin"
+            target_tsv = root / "target.tsv"
+            decoy_tsv = root / "decoy.tsv"
+            output = root / "output.parquet"
+            wiff_mzml.write_text("fixture", encoding="utf-8")
+            pd.DataFrame(
+                {
+                    "scan": [1, 2],
+                    "precursor_mz": [500.2, 600.3],
+                    "rt": [10.0, 11.0],
+                    "mz_array": ["100.0", "110.0"],
+                    "intensity_array": ["10.0", "11.0"],
+                }
+            ).to_parquet(native_raw, index=False)
+            pd.DataFrame(columns=PIN_COLUMNS).to_csv(fp_pin, sep="\t", index=False)
+            pd.DataFrame(columns=PERCOLATOR_COLUMNS).to_csv(
+                target_tsv, sep="\t", index=False
+            )
+            pd.DataFrame(columns=PERCOLATOR_COLUMNS).to_csv(
+                decoy_tsv, sep="\t", index=False
+            )
+
+            def fake_runner(command, **kwargs):
+                pd.DataFrame(
+                    {
+                        "scan": [102, 101],
+                        "precursor_mz": [600.3, 500.2],
+                        "rt": [11.0, 10.0],
+                    }
+                ).to_csv(Path(command[2]), sep="\t", index=False)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            state = gen_wiff_fragpipe_msdt(
+                native_raw,
+                wiff_mzml,
+                fp_pin,
+                target_tsv,
+                decoy_tsv,
+                output,
+                mzml_extractor=root / "linux_mzml_rawspectrum",
+                runner=fake_runner,
+            )
+
+            self.assertEqual(state, -1)
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

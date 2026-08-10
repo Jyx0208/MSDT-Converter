@@ -227,7 +227,15 @@ def gen_wiff_fragpipe_msdt(
                 "WIFF raw-spectrum Parquet is missing columns: "
                 + ", ".join(missing_raw)
             )
-        search_scans = pd.read_csv(search_scan_tsv, sep="\t", usecols=["scan"])
+        search_scans = pd.read_csv(search_scan_tsv, sep="\t")
+        required_search = {"scan", "precursor_mz", "rt"}
+        missing_search = sorted(required_search.difference(search_scans.columns))
+        if missing_search:
+            raise ValueError(
+                "mzML search-scan TSV is missing validation columns: "
+                + ", ".join(missing_search)
+            )
+        search_scans = search_scans[["scan", "precursor_mz", "rt"]].copy()
         if len(raw_df) != len(search_scans):
             raise ValueError(
                 "WIFF native/search scan row counts differ: "
@@ -237,6 +245,35 @@ def gen_wiff_fragpipe_msdt(
             raise ValueError("WIFF native scan values are not unique")
         if search_scans["scan"].duplicated().any():
             raise ValueError("WIFF search scan values are not unique")
+
+        native_mz = pd.to_numeric(raw_df["precursor_mz"], errors="raise").to_numpy()
+        search_mz = pd.to_numeric(
+            search_scans["precursor_mz"], errors="raise"
+        ).to_numpy()
+        native_rt = pd.to_numeric(raw_df["rt"], errors="raise").to_numpy()
+        search_rt = pd.to_numeric(search_scans["rt"], errors="raise").to_numpy()
+        invalid_spectrum_values = ~(
+            np.isfinite(native_mz)
+            & np.isfinite(search_mz)
+            & np.isfinite(native_rt)
+            & np.isfinite(search_rt)
+        )
+        spectrum_mismatch = invalid_spectrum_values | ~(
+            np.isclose(native_mz, search_mz, rtol=0, atol=0.01)
+            & np.isclose(native_rt, search_rt, rtol=0, atol=0.05)
+        )
+        if spectrum_mismatch.any():
+            mismatch_positions = np.flatnonzero(spectrum_mismatch)[:5]
+            examples = [
+                f"row {position}: native scan {raw_df.iloc[position]['scan']} "
+                f"vs search scan {search_scans.iloc[position]['scan']}"
+                for position in mismatch_positions
+            ]
+            raise ValueError(
+                "WIFF native/search spectrum order does not match within "
+                "precursor_mz=0.01 and rt=0.05 tolerances: "
+                + "; ".join(examples)
+            )
 
         raw_df = raw_df[
             ["scan", "precursor_mz", "rt", "mz_array", "intensity_array"]
