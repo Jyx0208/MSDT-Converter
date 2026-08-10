@@ -4,7 +4,6 @@ import shutil
 import subprocess
 from pathlib import Path
 import json
-import glob
 from dataclasses import dataclass
 
 # Configure logger (accessible by caller)
@@ -186,6 +185,35 @@ def prepare_workflow(workflow_path, destination_path, database_path):
     return destination
 
 
+def find_fragpipe_outputs(entry, workdir):
+    """Find one complete FragPipe PSM result set for a manifest entry."""
+    result_group = entry.experiment
+    if entry.bioreplicate:
+        result_group = f"{result_group}_{entry.bioreplicate}"
+    experiment_root = (
+        Path(workdir) / result_group if result_group else Path(workdir)
+    )
+    if not experiment_root.is_dir():
+        return None
+
+    edited_pins = list(experiment_root.rglob(f"{entry.path.stem}_edited.pin"))
+    pin_candidates = edited_pins or list(
+        experiment_root.rglob(f"{entry.path.stem}.pin")
+    )
+    result_sets = []
+    for pin in pin_candidates:
+        target = pin.parent / f"{entry.path.stem}_percolator_target_psms.tsv"
+        decoy = pin.parent / f"{entry.path.stem}_percolator_decoy_psms.tsv"
+        if target.is_file() and decoy.is_file():
+            result_sets.append({"pin": pin, "target": target, "decoy": decoy})
+    if len(result_sets) > 1:
+        raise RuntimeError(
+            f"Multiple complete FragPipe result sets found for {entry.path}: "
+            + ", ".join(str(result["pin"].parent) for result in result_sets)
+        )
+    return result_sets[0] if result_sets else None
+
+
 def run_cmd(cmd, cwd=None):
     env = os.environ.copy()
     java_bin_path = os.path.join(os.getcwd(), 'jdk-11.0.26', 'bin')
@@ -226,6 +254,12 @@ def run_fragpipe(manifest_path, workflow_path, fragpipe_output_path, exe_abs_pat
     if not os.path.exists(fasta_dir):
         logger.error(f"Fasta file does not exist: {fasta_path}")
 
+    decoy_pattern = '*.fasta.fas'
+    previous_decoys = {
+        path.resolve(): (path.stat().st_mtime_ns, path.stat().st_size)
+        for path in Path(fasta_dir).glob(decoy_pattern)
+    }
+
     philosopher_cmd1 = [philosopher_exe_path, 'workspace', '--clean', '--nocheck']
     subprocess.run(philosopher_cmd1, cwd=fasta_dir, check=True)
     
@@ -239,11 +273,25 @@ def run_fragpipe(manifest_path, workflow_path, fragpipe_output_path, exe_abs_pat
     subprocess.run(philosopher_cmd4, cwd=fasta_dir, check=True)
 
     # get decoyfasta
-    decoyfasta_pattern = os.path.join(fasta_dir, '*.fasta.fas')
-    decoyfasta_list = glob.glob(decoyfasta_pattern)
-    if not decoyfasta_list:
-        raise FileNotFoundError(f"Decoy fasta file not found in {decoyfasta_pattern}")
-    decoyfasta = decoyfasta_list[0]
+    current_decoys = list(Path(fasta_dir).glob(decoy_pattern))
+    generated_decoys = [
+        path
+        for path in current_decoys
+        if path.resolve() not in previous_decoys
+        or (path.stat().st_mtime_ns, path.stat().st_size)
+        != previous_decoys[path.resolve()]
+    ]
+    if not generated_decoys:
+        raise FileNotFoundError(
+            f"Philosopher did not create or update a decoy FASTA in {fasta_dir}"
+        )
+    if len(generated_decoys) != 1:
+        raise RuntimeError(
+            "Philosopher created or updated multiple decoy FASTA files; "
+            "cannot choose safely: "
+            + ", ".join(str(path) for path in generated_decoys)
+        )
+    decoyfasta = generated_decoys[0]
     
     workflow_dest = os.path.join(fragpipe_output_path, os.path.basename(workflow_path))
     prepare_workflow(workflow_path, workflow_dest, decoyfasta)
@@ -287,12 +335,8 @@ def generate_fp_search_result_fn(param):
         workdir = Path(param.get('workdir'))
         workdir.mkdir(parents=True, exist_ok=True)
 
-        def find_pin(entry):
-            matches = list(workdir.rglob(f'{entry.path.stem}_edited.pin'))
-            return matches[0] if matches else None
-
-        if all(find_pin(entry) is not None for entry in entries):
-            logger.info("All FragPipe PIN outputs already exist, skipping search")
+        if all(find_fragpipe_outputs(entry, workdir) is not None for entry in entries):
+            logger.info("All FragPipe PSM outputs already exist, skipping search")
             return 1
 
         manifest_path = build_manifest(entries, workdir)
@@ -304,10 +348,15 @@ def generate_fp_search_result_fn(param):
             thread_num,
             fasta_path,
         )
-        missing = [str(entry.path) for entry in entries if find_pin(entry) is None]
+        missing = [
+            str(entry.path)
+            for entry in entries
+            if find_fragpipe_outputs(entry, workdir) is None
+        ]
         if missing:
             logger.error(
-                "FragPipe completed without PIN outputs for: " + ", ".join(missing)
+                "FragPipe completed without complete PIN/Percolator outputs for: "
+                + ", ".join(missing)
             )
             return -1
         logger.info("generate FragPipe search results success")

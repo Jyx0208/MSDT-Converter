@@ -49,7 +49,7 @@ class WiffFragPipeMsdtTests(unittest.TestCase):
             wiff_mzml.write_text("fixture", encoding="utf-8")
             pd.DataFrame(
                 {
-                    "scan": [1, 2],
+                    "scan": [100, 101],
                     "precursor_mz": [500.2, 600.3],
                     "rt": [10.0, 11.0],
                     "mz_array": ["100.0,200.0", "110.0,210.0"],
@@ -80,7 +80,10 @@ class WiffFragPipeMsdtTests(unittest.TestCase):
                 search_scan_tsv = Path(command[2])
                 pd.DataFrame(
                     {
-                        "scan": [101, 102],
+                        "scan": [
+                            "sample=1 period=1 cycle=101 experiment=2",
+                            "sample=1 period=1 cycle=101 experiment=3",
+                        ],
                         "precursor_mz": [500.2, 600.3],
                         "rt": [10.0, 11.0],
                     }
@@ -103,7 +106,7 @@ class WiffFragPipeMsdtTests(unittest.TestCase):
 
             result = pd.read_parquet(output)
             self.assertEqual(state, 0)
-            self.assertEqual(result["scan"].tolist(), [1, 1, 2])
+            self.assertEqual(result["scan"].tolist(), [100, 100, 101])
             self.assertEqual(result["charge"].tolist(), [2, 3, 2])
             self.assertEqual(result["score"].tolist(), [5.0, 4.0, -1.0])
             self.assertNotIn("search_scan", result.columns)

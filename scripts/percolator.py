@@ -316,6 +316,7 @@ def _combine_pin_files(pin_files: Mapping[str, str | Path], output: Path) -> Non
     expected_header = None
     default_direction = None
     combined_rows: list[str] = []
+    next_global_scan = 1
     for run_id, pin_path in pin_files.items():
         if not run_id or "::" in run_id:
             raise ValueError(f"Invalid run_id for global Percolator: {run_id!r}")
@@ -332,11 +333,23 @@ def _combine_pin_files(pin_files: Mapping[str, str | Path], output: Path) -> Non
                 f"PIN feature columns differ between files; incompatible file: {source}"
             )
 
+        header_fields = lines[0].split("\t")
+        try:
+            spec_id_index = header_fields.index("SpecId")
+            scan_index = header_fields.index("ScanNr")
+        except ValueError as error:
+            raise ValueError(
+                f"PIN file must contain SpecId and ScanNr columns: {source}"
+            ) from error
+        run_scan_map: dict[int, int] = {}
+
         for line in lines[1:]:
             if not line:
                 continue
-            fields = line.split("\t", 1)
-            if fields[0] == "DefaultDirection":
+            fields = line.split("\t")
+            if len(fields) != len(header_fields):
+                raise ValueError(f"Malformed PIN row in {source}: {line!r}")
+            if fields[spec_id_index] == "DefaultDirection":
                 if default_direction is None:
                     default_direction = line
                 elif line != default_direction:
@@ -344,9 +357,19 @@ def _combine_pin_files(pin_files: Mapping[str, str | Path], output: Path) -> Non
                         f"PIN DefaultDirection differs between files: {source}"
                     )
                 continue
-            if len(fields) != 2:
-                raise ValueError(f"Malformed PIN row in {source}: {line!r}")
-            combined_rows.append(f"{run_id}::{fields[0]}\t{fields[1]}")
+            try:
+                source_scan = int(fields[scan_index])
+            except ValueError as error:
+                raise ValueError(
+                    f"PIN ScanNr must be an integer in {source}: "
+                    f"{fields[scan_index]!r}"
+                ) from error
+            if source_scan not in run_scan_map:
+                run_scan_map[source_scan] = next_global_scan
+                next_global_scan += 1
+            fields[spec_id_index] = f"{run_id}::{fields[spec_id_index]}"
+            fields[scan_index] = str(run_scan_map[source_scan])
+            combined_rows.append("\t".join(fields))
 
     output_lines: list[str] = [expected_header or ""]
     if default_direction is not None:

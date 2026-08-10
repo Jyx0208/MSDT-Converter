@@ -59,11 +59,44 @@ class GlobalPercolatorTests(unittest.TestCase):
             )
             self.assertIn("run_a::run.101.101.2_1", combined_lines[2])
             self.assertIn("run_b::run.101.101.2_1", combined_lines[3])
+            header = combined_lines[0].split("\t")
+            scan_index = header.index("ScanNr")
+            run_a_scan = combined_lines[2].split("\t")[scan_index]
+            run_b_scan = combined_lines[3].split("\t")[scan_index]
+            self.assertNotEqual(run_a_scan, run_b_scan)
             self.assertEqual(len(calls), 1)
             self.assertIn("--post-processing-tdc", calls[0][0])
             self.assertIn("4", calls[0][0])
             self.assertTrue(artifacts.target_tsv.is_file())
             self.assertTrue(artifacts.decoy_tsv.is_file())
+
+    def test_candidates_from_one_spectrum_share_the_remapped_scan_number(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pin = root / "a.pin"
+            pin.write_text(
+                PIN_HEADER
+                + "run.101.101.2_1\t1\t101\t1000\t999\t40\tK.PEPTIDE.R\tP1\n"
+                + "run.101.101.3_1\t1\t101\t1001\t998\t30\tK.OTHERSEQ.R\tP2\n",
+                encoding="utf-8",
+            )
+            percolator_exe = root / "percolator"
+            percolator_exe.touch()
+
+            def fake_runner(command, **kwargs):
+                Path(command[command.index("--results-psms") + 1]).touch()
+                Path(command[command.index("--decoy-results-psms") + 1]).touch()
+
+            artifacts = run_global_percolator(
+                {"run_a": pin}, percolator_exe, root / "global", runner=fake_runner
+            )
+
+            lines = artifacts.combined_pin.read_text(encoding="utf-8").splitlines()
+            scan_index = lines[0].split("\t").index("ScanNr")
+            self.assertEqual(
+                lines[1].split("\t")[scan_index],
+                lines[2].split("\t")[scan_index],
+            )
 
 
 if __name__ == "__main__":

@@ -220,6 +220,14 @@ def _pin_mapping(values: list[str]) -> dict[str, str]:
     return mapping
 
 
+def _add_global_fdr_argument(command_parser: argparse.ArgumentParser) -> None:
+    command_parser.add_argument(
+        "--global-fdr",
+        type=float,
+        help="target q-value threshold; all decoy PSMs are retained",
+    )
+
+
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="MSDT-Converter v2")
     parser.add_argument(
@@ -231,7 +239,7 @@ def create_parser() -> argparse.ArgumentParser:
     run.add_argument("--config", required=True)
     run.add_argument("--file-list")
     run.add_argument("--threads", type=int)
-    run.add_argument("--global-fdr", type=float)
+    _add_global_fdr_argument(run)
     run.add_argument("--percolator-exe")
 
     search = commands.add_parser("fp-search", help="run batch FragPipe search")
@@ -249,7 +257,7 @@ def create_parser() -> argparse.ArgumentParser:
     enrich.add_argument("--decoy-tsv", required=True)
     enrich.add_argument("--output", required=True)
     enrich.add_argument("--run-id")
-    enrich.add_argument("--global-fdr", type=float)
+    _add_global_fdr_argument(enrich)
 
     build = commands.add_parser("fp-msdt", help="build an FP-derived MSDT")
     build.add_argument("--instrument", choices=("mzml", "wiff"), required=True)
@@ -266,11 +274,12 @@ def create_parser() -> argparse.ArgumentParser:
         ),
     )
     build.add_argument("--run-id")
-    build.add_argument("--global-fdr", type=float)
+    _add_global_fdr_argument(build)
     build.add_argument("--no-unify-residue", action="store_true")
 
     global_command = commands.add_parser(
-        "global-percolator", help="pool PINs and run Percolator once"
+        "global-percolator",
+        help="pool PINs, remap cross-run ScanNr values, and run Percolator once",
     )
     global_command.add_argument(
         "--pin", action="append", required=True, metavar="RUN_ID=PATH"

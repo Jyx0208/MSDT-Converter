@@ -19,6 +19,55 @@ PERCOLATOR_COLUMNS = [
 
 
 class CliTests(unittest.TestCase):
+    def test_fp_msdt_accepts_pin_without_optional_msbooster_columns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "raw.parquet"
+            pin = root / "sample.pin"
+            target = root / "target.tsv"
+            decoy = root / "decoy.tsv"
+            output = root / "output.parquet"
+            pd.DataFrame(
+                {
+                    "scan": [101],
+                    "precursor_mz": [500.2],
+                    "rt": [10.0],
+                    "mz_array": [[100.0, 200.0]],
+                    "intensity_array": [[10.0, 20.0]],
+                }
+            ).to_parquet(raw, index=False)
+            pd.DataFrame(
+                [["run.101.101.2_1", 1, 101, 1000.0, 10.0, 1, 0, 40.0,
+                  5.0, 8, "b,y", "K.PEPTIDE.R", "P1"]],
+                columns=[
+                    "SpecId", "Label", "ScanNr", "ExpMass", "retentiontime",
+                    "rank", "isotope_errors", "hyperscore", "delta_hyperscore",
+                    "matched_ion_num", "ion_series", "Peptide", "Proteins",
+                ],
+            ).to_csv(pin, sep="\t", index=False)
+            pd.DataFrame(
+                [["run.101.101.2_1", 5.0, 0.001, 0.002, "K.PEPTIDE.R", "P1"]],
+                columns=PERCOLATOR_COLUMNS,
+            ).to_csv(target, sep="\t", index=False)
+            pd.DataFrame(columns=PERCOLATOR_COLUMNS).to_csv(
+                decoy, sep="\t", index=False
+            )
+
+            exit_code = main(
+                [
+                    "fp-msdt", "--instrument", "mzml",
+                    "--raw-spectrum", str(raw), "--pin", str(pin),
+                    "--target-tsv", str(target), "--decoy-tsv", str(decoy),
+                    "--output", str(output),
+                ]
+            )
+
+            result = pd.read_parquet(output)
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(result["unweighted_spectral_entropy"].isna().all())
+            self.assertTrue(result["delta_RT_loess"].isna().all())
+            self.assertEqual(result["score"].tolist(), [5.0])
+
     def test_enrich_command_adds_percolator_fields(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

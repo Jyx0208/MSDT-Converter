@@ -35,6 +35,10 @@ fields. Matching is performed with the per-run key
 target/decoy label conflicts stop the conversion instead of silently duplicating
 or dropping rows.
 
+The two MSBooster-derived PIN features `unweighted_spectral_entropy` and
+`delta_RT_loess` are optional. If a valid FragPipe workflow does not emit them,
+the converter keeps the output columns and fills them with null values.
+
 FragPipe workflows used by the converter are copied into the result directory and
 the copy is forced to contain:
 
@@ -81,11 +85,12 @@ python convert.py fp-msdt \
   --output sample_fp_wiff_msdt.parquet
 ```
 
-The converter maps FragPipe search scans to WIFF-native scans, cross-validates
-each positional mapping with retention time and precursor m/z, uses the search
-scan for PSM matching, and writes the native scan to the final Parquet. A row
-count, ordering, RT, or precursor-m/z mismatch stops conversion instead of
-silently assigning the wrong native scan.
+The converter cross-validates the WIFF-native SCIEX IDs and the raw-spectrum
+Parquet position with retention time and precursor m/z. FragPipe's `ScanNr` is
+the 1-based mzML spectrum index, so it is matched to the Parquet's 0-based
+`scan` as `ScanNr = scan + 1`; SCIEX `cycle` is never used alone because it is
+not unique. A row-count, ordering, RT, or precursor-m/z mismatch stops
+conversion instead of silently assigning the wrong native scan.
 
 ### Batch FragPipe search with `file_list`
 
@@ -129,8 +134,11 @@ python convert.py global-percolator \
 ```
 
 Each PIN must have the same feature header and `DefaultDirection`. The converter
-prefixes every PSM identifier with its run ID, writes global target/decoy TSVs,
-and later filters each run before checking the per-run `psm_id` uniqueness.
+prefixes every PSM identifier with its run ID and remaps `(run_id, ScanNr)` to a
+globally unique spectrum number before running Percolator. All candidates from
+the same spectrum retain the same remapped number. It then writes global
+target/decoy TSVs and later filters each run before checking per-run `psm_id`
+uniqueness.
 `config_global_fdr.example.json` shows the equivalent JSON configuration.
 
 Legacy configuration remains supported:

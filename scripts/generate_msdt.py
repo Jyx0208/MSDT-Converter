@@ -41,6 +41,53 @@ residues_frag = {
     'Q[0.9800]': 'Q[.98]'
 }
 
+FRAGPIPE_PIN_REQUIRED_COLUMNS = [
+    "SpecId",
+    "Label",
+    "ScanNr",
+    "ExpMass",
+    "retentiontime",
+    "rank",
+    "isotope_errors",
+    "hyperscore",
+    "delta_hyperscore",
+    "matched_ion_num",
+    "ion_series",
+    "Peptide",
+    "Proteins",
+]
+FRAGPIPE_PIN_OPTIONAL_COLUMNS = [
+    "unweighted_spectral_entropy",
+    "delta_RT_loess",
+]
+
+
+def _read_fragpipe_pin(path):
+    """Read a FragPipe PIN while tolerating optional MSBooster features."""
+    frame = pd.read_csv(path, sep="\t")
+    missing_required = sorted(
+        set(FRAGPIPE_PIN_REQUIRED_COLUMNS).difference(frame.columns)
+    )
+    if missing_required:
+        raise ValueError(
+            f"FragPipe PIN {path} is missing required columns: "
+            + ", ".join(missing_required)
+        )
+    missing_optional = [
+        column
+        for column in FRAGPIPE_PIN_OPTIONAL_COLUMNS
+        if column not in frame.columns
+    ]
+    for column in missing_optional:
+        frame[column] = np.nan
+    if missing_optional:
+        logger.warning(
+            "FragPipe PIN %s is missing optional MSBooster columns: %s",
+            path,
+            ", ".join(missing_optional),
+        )
+    return frame[FRAGPIPE_PIN_REQUIRED_COLUMNS + FRAGPIPE_PIN_OPTIONAL_COLUMNS]
+
 def keep_uppercase(s: str) -> str:
     """Remove all characters in the string that are not capital letters."""
     return re.sub(r'[^A-Z]', '', s)
@@ -146,8 +193,7 @@ def gen_mzml_fragpipe_msdt(
         raw_df['intensity_array'] = raw_df['intensity_array'].map(lambda x: np.asarray(x.split(',') if isinstance(x, str) else x, dtype='float32'))
 
         # read fp_sr decoy
-        need_cols = ['SpecId', 'Label', 'ScanNr', 'ExpMass', 'retentiontime', 'rank', 'isotope_errors', 'hyperscore', 'delta_hyperscore', 'matched_ion_num', 'ion_series', 'unweighted_spectral_entropy', 'delta_RT_loess', 'Peptide', 'Proteins']
-        fp_sr_df = pd.read_csv(fp_pin_path, sep='\t',usecols=need_cols)
+        fp_sr_df = _read_fragpipe_pin(fp_pin_path)
         fp_sr_df = fp_sr_df.rename(columns={'ScanNr': 'scan', 'Label':'label', 'Proteins': 'proteins'})
         fp_sr_df['scan'] = fp_sr_df['scan'].astype(int)
         fp_sr_df['label'] = fp_sr_df['label'].replace(-1, 0).astype('int8')
@@ -278,7 +324,13 @@ def gen_wiff_fragpipe_msdt(
         raw_df = raw_df[
             ["scan", "precursor_mz", "rt", "mz_array", "intensity_array"]
         ].copy()
-        raw_df["search_scan"] = search_scans["scan"].astype(int).to_numpy()
+        native_spectrum_index = pd.to_numeric(raw_df["scan"], errors="raise")
+        if not np.equal(native_spectrum_index % 1, 0).all():
+            raise ValueError("WIFF raw-spectrum scan values must be integer mzML indices")
+        # MSFragger reports the mzML spectrum index as a 1-based ScanNr. SCIEX
+        # native IDs (sample/period/cycle/experiment) are deliberately used only
+        # for order validation because cycle alone is not unique.
+        raw_df["search_scan"] = native_spectrum_index.astype(int) + 1
         raw_df = raw_df.dropna(subset=["scan", "mz_array", "intensity_array"])
         raw_df["scan"] = raw_df["scan"].astype(int)
 
@@ -292,24 +344,7 @@ def gen_wiff_fragpipe_msdt(
             to_float_array
         )
 
-        need_cols = [
-            "SpecId",
-            "Label",
-            "ScanNr",
-            "ExpMass",
-            "retentiontime",
-            "rank",
-            "isotope_errors",
-            "hyperscore",
-            "delta_hyperscore",
-            "matched_ion_num",
-            "ion_series",
-            "unweighted_spectral_entropy",
-            "delta_RT_loess",
-            "Peptide",
-            "Proteins",
-        ]
-        fp_df = pd.read_csv(fp_pin_path, sep="\t", usecols=need_cols)
+        fp_df = _read_fragpipe_pin(fp_pin_path)
         fp_df = fp_df.rename(
             columns={
                 "ScanNr": "search_scan",
