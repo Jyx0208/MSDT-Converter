@@ -12,6 +12,17 @@ from scripts.search_engine import (
 )
 
 
+def write_complete_fragpipe_outputs(result_dir, stem, *, edited=True):
+    pin_name = f"{stem}_edited.pin" if edited else f"{stem}.pin"
+    (result_dir / pin_name).write_text(
+        "SpecId\tLabel\n", encoding="utf-8"
+    )
+    for kind in ("target", "decoy"):
+        (result_dir / f"{stem}_percolator_{kind}_psms.tsv").write_text(
+            "PSMId\tscore\n", encoding="utf-8"
+        )
+
+
 class FragPipeBatchTests(unittest.TestCase):
     def test_fragpipe_uses_decoy_fasta_created_by_current_run(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -150,9 +161,7 @@ class FragPipeBatchTests(unittest.TestCase):
                 result_dir = Path(args[1]) / "exp"
                 result_dir.mkdir(parents=True)
                 for sample in samples:
-                    (result_dir / f"{sample.stem}_edited.pin").touch()
-                    (result_dir / f"{sample.stem}_percolator_target_psms.tsv").touch()
-                    (result_dir / f"{sample.stem}_percolator_decoy_psms.tsv").touch()
+                    write_complete_fragpipe_outputs(result_dir, sample.stem)
 
             with patch("scripts.search_engine.run_fragpipe", fake_run_fragpipe):
                 state = generate_fp_search_result_fn(
@@ -182,9 +191,7 @@ class FragPipeBatchTests(unittest.TestCase):
             workdir = root / "results"
             result_dir = workdir / "exp"
             result_dir.mkdir(parents=True)
-            (result_dir / "sample.pin").touch()
-            (result_dir / "sample_percolator_target_psms.tsv").touch()
-            (result_dir / "sample_percolator_decoy_psms.tsv").touch()
+            write_complete_fragpipe_outputs(result_dir, "sample", edited=False)
 
             with patch("scripts.search_engine.run_fragpipe") as run_fragpipe_mock:
                 state = generate_fp_search_result_fn(
@@ -199,6 +206,39 @@ class FragPipeBatchTests(unittest.TestCase):
 
             self.assertEqual(state, 1)
             run_fragpipe_mock.assert_not_called()
+
+    def test_zero_byte_percolator_outputs_are_not_reported_complete(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sample = root / "sample.mzML"
+            sample.touch()
+            file_list = root / "file_list.txt"
+            file_list.write_text(f"{sample}\n", encoding="utf-8")
+            workflow = root / "default.workflow"
+            workflow.touch()
+            fasta = root / "database.fasta"
+            fasta.touch()
+            result_dir = root / "results" / "exp"
+            result_dir.mkdir(parents=True)
+            (result_dir / "sample_edited.pin").write_text(
+                "SpecId\tLabel\n", encoding="utf-8"
+            )
+            (result_dir / "sample_percolator_target_psms.tsv").touch()
+            (result_dir / "sample_percolator_decoy_psms.tsv").touch()
+
+            with patch("scripts.search_engine.run_fragpipe") as run_fragpipe_mock:
+                state = generate_fp_search_result_fn(
+                    {
+                        "file_list": str(file_list),
+                        "workdir": str(root / "results"),
+                        "fasta_path": str(fasta),
+                        "workflow_path": str(workflow),
+                        "thread_num": 2,
+                    }
+                )
+
+            self.assertEqual(state, -1)
+            run_fragpipe_mock.assert_called_once()
 
     def test_pin_without_percolator_tsvs_is_not_reported_complete(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -280,9 +320,7 @@ class FragPipeBatchTests(unittest.TestCase):
             for experiment in ("exp_a", "exp_b"):
                 result_dir = workdir / experiment
                 result_dir.mkdir(parents=True)
-                (result_dir / "sample.pin").touch()
-                (result_dir / "sample_percolator_target_psms.tsv").touch()
-                (result_dir / "sample_percolator_decoy_psms.tsv").touch()
+                write_complete_fragpipe_outputs(result_dir, "sample")
 
             with patch("scripts.search_engine.run_fragpipe") as run_fragpipe_mock:
                 state = generate_fp_search_result_fn(

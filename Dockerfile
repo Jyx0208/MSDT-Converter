@@ -1,9 +1,9 @@
-FROM python:3.13.9
+FROM guomics2017/msdt-converter:v1.3
 
 WORKDIR /app
 
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app/
-
-RUN pip install -r /app/requirements.txt
 
 ENTRYPOINT ["python", "convert.py"]

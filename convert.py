@@ -228,6 +228,16 @@ def _add_global_fdr_argument(command_parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_run_id_argument(command_parser: argparse.ArgumentParser) -> None:
+    command_parser.add_argument(
+        "--run-id",
+        help=(
+            "run key used only with pooled global-Percolator TSVs whose "
+            "PSMId values start with RUN_ID::; omit for per-run TSVs"
+        ),
+    )
+
+
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="MSDT-Converter v2")
     parser.add_argument(
@@ -256,7 +266,7 @@ def create_parser() -> argparse.ArgumentParser:
     enrich.add_argument("--target-tsv", required=True)
     enrich.add_argument("--decoy-tsv", required=True)
     enrich.add_argument("--output", required=True)
-    enrich.add_argument("--run-id")
+    _add_run_id_argument(enrich)
     _add_global_fdr_argument(enrich)
 
     build = commands.add_parser("fp-msdt", help="build an FP-derived MSDT")
@@ -273,7 +283,7 @@ def create_parser() -> argparse.ArgumentParser:
             "native WIFF conversion is performed outside this Linux tool"
         ),
     )
-    build.add_argument("--run-id")
+    _add_run_id_argument(build)
     _add_global_fdr_argument(build)
     build.add_argument("--no-unify-residue", action="store_true")
 

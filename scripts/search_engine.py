@@ -204,7 +204,11 @@ def find_fragpipe_outputs(entry, workdir):
     for pin in pin_candidates:
         target = pin.parent / f"{entry.path.stem}_percolator_target_psms.tsv"
         decoy = pin.parent / f"{entry.path.stem}_percolator_decoy_psms.tsv"
-        if target.is_file() and decoy.is_file():
+        # FragPipe/Percolator creates output files before it has finished
+        # writing them.  A killed run can therefore leave a PIN and two
+        # zero-byte TSVs that must not be treated as a reusable result set.
+        outputs = (pin, target, decoy)
+        if all(path.is_file() and path.stat().st_size > 0 for path in outputs):
             result_sets.append({"pin": pin, "target": target, "decoy": decoy})
     if len(result_sets) > 1:
         raise RuntimeError(

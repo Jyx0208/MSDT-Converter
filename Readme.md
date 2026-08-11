@@ -48,6 +48,8 @@ percolator.keep-tsv-files=true
 ```
 
 The source workflow is never overwritten.
+The repository also ships `workflows/Default-v2.workflow`, based on the
+FragPipe 21.1 default workflow with both Percolator settings enabled.
 
 ### Enrich an existing FP Parquet
 
@@ -115,7 +117,7 @@ python convert.py fp-search \
   --file-list file_list.tsv \
   --workdir results \
   --fasta database.fasta \
-  --workflow default.workflow \
+  --workflow workflows/Default-v2.workflow \
   --threads 20
 ```
 
@@ -147,6 +149,15 @@ Legacy configuration remains supported:
 python convert.py -config=config_wiff.json
 ```
 
+Build the complete v2 image locally. The Dockerfile layers the v2 source over
+the published v1.3 toolchain so FragPipe, MSFragger, Philosopher, JDK, and the
+vendor-independent spectrum extractors are all available:
+
+```bash
+docker build -t msdt-converter:v2 .
+docker run --rm msdt-converter:v2 --help
+```
+
 ---
 
 # 📥 Getting the Test Data and Configurations (Google Drive)
@@ -162,7 +173,9 @@ All test data and configuration files are available for download via the Google 
 
 ## 💻 Command Line Usage Examples (Docker)
 
-Below are command line examples for running the data conversion using the `guomics2017/msdt-converter:v1.3` Docker image for different instrument data.
+Below are command line examples for running the data conversion using the locally
+built `msdt-converter:v2` image for different instrument data. Build it first
+with `docker build -t msdt-converter:v2 .` from the repository root.
 
 > **Note:** Please replace the local path `D:\Work\MSDT_Converter` in the commands with your actual data storage path.
 
@@ -171,7 +184,7 @@ Below are command line examples for running the data conversion using the `guomi
 Uses the `config_mzml.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.3 -config=/home/config_mzml.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home msdt-converter:v2 -config=/home/config_mzml.json
 ```
 
 ### 2. Bruker Data Conversion
@@ -179,7 +192,7 @@ docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.
 Uses the `config_tims.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.3 -config=/home/config_tims.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home msdt-converter:v2 -config=/home/config_tims.json
 ```
 
 ### 3. SCIEX Data Conversion
@@ -187,7 +200,7 @@ docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.
 Uses the `config_wiff.json` configuration file.
 
 ```bash
-docker run --rm -v "D:\Work\MSDT_Converter":/home guomics2017/msdt-converter:v1.3 -config=/home/config_wiff.json
+docker run --rm -v "D:\Work\MSDT_Converter":/home msdt-converter:v2 -config=/home/config_wiff.json
 ```
 
 
@@ -223,17 +236,18 @@ complex setup.
 
 ---
 
-The process involves **pulling the image from Docker Hub** and then running a container, mapping your local data
-directory to the container's working directory.
+The process builds the v2 image from this repository and then runs a container,
+mapping your local data directory to the container's working directory. Docker
+automatically pulls the published v1.3 toolchain base image during the build.
 
 1. **Ensure the Docker service is running.**
-2. **Pull the Docker Image** from the registry in your terminal:
+2. **Build the v2 Docker Image** from the repository root:
    ```bash
-   docker pull guomics2017/msdt-converter:v1.3
+   docker build -t msdt-converter:v2 .
    ```
 3. **Run the Container** (Example using a typical Linux absolute path):
    ```bash
-   docker run --rm -v /home/user/MassNet-DDA:/home/test_data guomics2017/msdt-converter:v1.3 -config=/home/test_data/config.json
+   docker run --rm -v /home/user/MassNet-DDA:/home/test_data msdt-converter:v2 -config=/home/test_data/config.json
    ```
 
 ## Option B: Conda
@@ -375,6 +389,10 @@ This section contains nested configurations based on data type (`tims`, `mzml`, 
 | **`rawspectrum_path`** | `string` | `/home/test_data/.../3D_rawspectrum.tsv` | **Input.** Path to the raw spectrum file. |
 | **`sage_search_result_path`** | `string` | `/home/test_data/.../D_search_result.tsv` | **Input.** Path to the Sage search result file. |
 | **`fp_pin_path`** | `string` | `/home/test_data/.../A18..._edited.pin` | **Input.** Path to the FragPipe `.pin` file. |
+| **`percolator_target_path`** | `string` | `/home/test_data/.../exp/..._target_psms.tsv` | **Input.** Percolator target PSM TSV from the same FragPipe result directory as the PIN. |
+| **`percolator_decoy_path`** | `string` | `/home/test_data/.../exp/..._decoy_psms.tsv` | **Input.** Percolator decoy PSM TSV from the same FragPipe result directory as the PIN. |
+| **`run_id`** | `string` | `"sample01"` | Use only for pooled global-Percolator TSVs whose PSM IDs start with `sample01::`; omit for ordinary per-run TSVs. |
+| **`fdr_threshold`** | `number` | `0.01` | Optional q-value threshold for targets; all decoys are retained. |
 | **`sage_unify_residue`** | `boolean` | `true` | If `true`, Sage residue format converts to MSDT format. |
 | **`fp_unify_residue`** | `boolean` | `true` | If `true`, FragPipe residue format converts to MSDT format. |
 | **`sage_output`** | `string` | `/home/test_data/.../sage_msdt.parquet` | **Output.** Path for the generated Sage MSDT `.parquet` file. |
@@ -393,7 +411,7 @@ This section contains nested configurations based on data type (`tims`, `mzml`, 
 | **`fp_pin_path`** | `string` | `""` | **Input.** FragPipe edited PIN used to build the FP MSDT rows. |
 | **`percolator_target_path`** | `string` | `""` | **Input.** Percolator target PSM TSV retained by the workflow. |
 | **`percolator_decoy_path`** | `string` | `""` | **Input.** Percolator decoy PSM TSV retained by the workflow. |
-| **`run_id`** | `string` | `"sample01"` | Run prefix used in global Percolator TSVs; omit only for per-run TSVs. |
+| **`run_id`** | `string` | `"sample01"` | Use only for pooled global-Percolator TSVs whose PSM IDs start with `sample01::`; omit for ordinary per-run TSVs. |
 | **`fdr_threshold`** | `number` | `0.01` | Optional q-value threshold for targets; all decoys are retained. |
 | **`sage_unify_residue`** | `boolean` | `true` | Normalize Sage modified sequences to the MSDT representation. |
 | **`fp_unify_residue`** | `boolean` | `true` | Normalize FragPipe/Percolator modified sequences before PSM matching. |
