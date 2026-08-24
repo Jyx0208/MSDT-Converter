@@ -1,152 +1,158 @@
-# PRIDE 真实数据测试候选（MSDT-Converter v2）
+# PRIDE Real-Data Test Candidates for MSDT-Converter v2
 
-> 调研日期：2026-08-11。只使用 PRIDE Archive / ProteomeXchange 官方项目元数据、PRIDE API 和官方文件主机；未下载大文件。文件大小以 API 的 `fileSizeBytes` 为准，MiB = bytes / 1,048,576。
+> Research date: 2026-08-11. This review used only official PRIDE Archive and ProteomeXchange project metadata, the PRIDE API, and official file hosts; no large files were downloaded. File sizes are based on the API `fileSizeBytes` value. MiB = bytes / 1,048,576.
 
-## 结论
+## Recommendation
 
-最合适的组合不是一个大项目，而是三层测试集：
+The best choice is a three-tier test set rather than one large project:
 
-1. **SCIEX 冒烟 + 批处理主集：`PXD061973`**。单组 `WIFF/WIFF.scan` 只有 144.81 MiB；4 组合计 615.28 MiB，正好同时验证 WIFF 扫描映射、`file_list` 和 global FDR。
-2. **Thermo 回归集：`PXD000001`**。经典 LTQ Orbitrap Velos RAW 只有 210.26 MiB，还有 FASTA、Mascot DAT，以及项目记录直接链接的后续 mzML，很适合做 RAW→mzML 转换回归。
-3. **PTM / 多电荷压力集：`PXD079474`**。直接下载已转换 mzML + FASTA + mzIdentML 约 587 MiB；官方方法明确是 Exploris 480 DDA Top15、HCD、前体电荷 2–6，且是 Fe-NTA 富集的 STY 磷酸化样本。
+1. **Primary SCIEX smoke and batch test: `PXD061973`.** One `WIFF/WIFF.scan` pair is only 144.81 MiB, while all four pairs total 615.28 MiB. This dataset can validate WIFF scan mapping, `file_list`, and global FDR together.
+2. **Thermo regression test: `PXD000001`.** The classic LTQ Orbitrap Velos RAW file is only 210.26 MiB. The project also provides a FASTA file, a Mascot DAT file, and a later mzML file linked directly from the project record, making it suitable for RAW-to-mzML conversion regression testing.
+3. **PTM and multiple-charge stress test: `PXD079474`.** The converted mzML, FASTA, and mzIdentML files total approximately 587 MiB. The official method specifies Exploris 480 DDA Top15 acquisition, HCD, precursor charges 2-6, and an Fe-NTA-enriched STY phosphopeptide sample.
 
-如需“官方已转 mzML 与同名 WIFF 一对一”的金标准，再增加 `PXD064530`；它的价值高，但单组完整下载要 2.44 GiB，不应作为首次冒烟测试。
+For an official one-to-one reference consisting of an mzML file and a same-name WIFF file, add `PXD064530`. It is valuable, but a complete run requires 2.44 GiB and is therefore not recommended for the first smoke test.
 
-## A. 首选：PXD061973（SCIEX 小文件 + 4 文件批处理）
+## A. Preferred: PXD061973 (Small SCIEX Files and Four-File Batch)
 
-PRIDE 项目：[PXD061973](https://www.ebi.ac.uk/pride/archive/projects/PXD061973)
-官方元数据：[project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD061973) · [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD061973/files?pageSize=1000&page=0)
+PRIDE project: [PXD061973](https://www.ebi.ac.uk/pride/archive/projects/PXD061973)
 
-- 仪器：PRIDE 受控字段为 **TripleTOF 5600**；样本方法文本写 **Triple-TOF 5600+ (AB SCIEX)**。
-- 采集：PRIDE 受控字段为 **Data-dependent acquisition**，方法文本写 **information-dependent acquisition (IDA)**。
-- PTM：PRIDE 标注“No PTMs are included in the dataset”，适合先排除 PTM 干扰。
-- 处理：原作者用 ProteinPilot 4.5，E. coli + rabbit UniProt（2021-09-28），1% FDR。但该项目是 partial submission，**未存放 FASTA 或搜索结果**；因此它适合使用本项目统一的 FragPipe/FASTA 重搜，不适合要求复现原论文鉴定数。
+Official metadata: [project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD061973); [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD061973/files?pageSize=1000&page=0)
 
-| Run | WIFF | WIFF.scan | 合计 |
+- Instrument: the PRIDE controlled field specifies **TripleTOF 5600**, while the sample-method text specifies **Triple-TOF 5600+ (AB SCIEX)**.
+- Acquisition: the PRIDE controlled field specifies **data-dependent acquisition**, while the method text specifies **information-dependent acquisition (IDA)**.
+- PTMs: PRIDE states that no PTMs are included in the dataset, which makes the project suitable for an initial test without PTM-related complexity.
+- Processing: the original authors used ProteinPilot 4.5, an E. coli plus rabbit UniProt database dated 2021-09-28, and 1% FDR. However, this is a partial submission and **does not include a FASTA file or search results**. It is therefore suitable for a standardized FragPipe re-search with this project, but not for reproducing the identification count in the original paper.
+
+| Run | WIFF | WIFF.scan | Total |
 |---|---:|---:|---:|
 | `1` | `1.wiff` — 12,455,936 B (11.88 MiB) | `1.wiff.scan` — 139,391,092 B (132.93 MiB) | 144.81 MiB |
 | `2` | `2.wiff` — 12,156,928 B (11.59 MiB) | `2.wiff.scan` — 155,982,256 B (148.76 MiB) | 160.35 MiB |
 | `3` | `3.wiff` — 12,161,024 B (11.60 MiB) | `3.wiff.scan` — 149,001,820 B (142.10 MiB) | 153.70 MiB |
 | `4` | `4.wiff` — 12,840,960 B (12.25 MiB) | `4.wiff.scan` — 151,177,880 B (144.17 MiB) | 156.42 MiB |
-| **全部** |  |  | **645,167,896 B = 615.28 MiB** |
+| **All runs** |  |  | **645,167,896 B = 615.28 MiB** |
 
-官方 HTTPS 目录前缀：`https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/03/PXD061973/`。示例：[1.wiff](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/03/PXD061973/1.wiff) · [1.wiff.scan](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/03/PXD061973/1.wiff.scan)。
+Official HTTPS directory prefix: `https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/03/PXD061973/`. Examples: [1.wiff](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/03/PXD061973/1.wiff); [1.wiff.scan](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/03/PXD061973/1.wiff.scan).
 
-**用法：**先只下载 Run 1 做冒烟；通过后下载 1–4，用同一 msconvert 参数转为 4 个 mzML，用同一 FASTA/工作流跑 FragPipe，然后测 `file_list` 与 global Percolator。**`.wiff` 和同名 `.wiff.scan` 必须一起下载和保存。**
+**Usage:** Download only Run 1 for the initial smoke test. After it passes, download Runs 1-4, convert all four to mzML with identical MSConvert parameters, search them with the same FASTA and workflow, and then test `file_list` and global Percolator. **A `.wiff` file and its same-name `.wiff.scan` companion must be downloaded and retained together.**
 
-## B. Thermo 回归：PXD000001
+## B. Thermo Regression: PXD000001
 
-PRIDE 项目：[PXD000001](https://www.ebi.ac.uk/pride/archive/projects/PXD000001)
-官方元数据：[project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001) · [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001/files?pageSize=1000&page=0)
+PRIDE project: [PXD000001](https://www.ebi.ac.uk/pride/archive/projects/PXD000001)
 
-- 仪器：**LTQ Orbitrap Velos**；实验类型标注为 bottom-up proteomics。原始文件名包含 `Top10HCD`，可用于 HCD 回归；PRIDE 受控字段未另外标注 DDA，所以应从实际 mzML 扫描结构再确认。
-- PTM：PRIDE 标注 monohydroxylation、TMT6plex acylation 和 methylthiolation。
+Official metadata: [project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001); [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD000001/files?pageSize=1000&page=0)
 
-| 角色 | 文件 | 大小 |
+- Instrument: **LTQ Orbitrap Velos**. The experiment type is bottom-up proteomics. The original filename contains `Top10HCD`, making it useful for HCD regression testing. The PRIDE controlled field does not separately specify DDA, so the acquisition mode should be confirmed from the actual mzML scan structure.
+- PTMs: PRIDE lists monohydroxylation, TMT6plex acylation, and methylthiolation.
+
+| Role | File | Size |
 |---|---|---:|
 | Thermo RAW | [`TMT_Erwinia_1uLSike_Top10HCD_isol2_45stepped_60min_01.raw`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/TMT_Erwinia_1uLSike_Top10HCD_isol2_45stepped_60min_01.raw) | 220,475,548 B (210.26 MiB) |
-| 数据库 | [`erwinia_carotovora.fasta`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/erwinia_carotovora.fasta) | 1,657,668 B (1.58 MiB) |
-| 原搜索结果（仅作参考） | [`F063721.dat`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/F063721.dat) | 21,185,462 B (20.20 MiB) |
-| 后续转换 mzML | [`...01-20141210.mzML`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/TMT_Erwinia_1uLSike_Top10HCD_isol2_45stepped_60min_01-20141210.mzML) | 450,032,788 B (429.18 MiB) |
+| Database | [`erwinia_carotovora.fasta`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/erwinia_carotovora.fasta) | 1,657,668 B (1.58 MiB) |
+| Original search result (reference only) | [`F063721.dat`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/F063721.dat) | 21,185,462 B (20.20 MiB) |
+| Later converted mzML | [`...01-20141210.mzML`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2012/03/PXD000001/TMT_Erwinia_1uLSike_Top10HCD_isol2_45stepped_60min_01-20141210.mzML) | 450,032,788 B (429.18 MiB) |
 
-注：当前 files API 列出 RAW、FASTA、DAT 和旧 mzXML，却未列出上表的 `-20141210.mzML`；但该 mzML 由**项目自身的 data-processing protocol 直接链接**，且官方 PRIDE HTTPS 主机返回 200 与上述 Content-Length。它因此可作为转换对照，但不应假设它与当前 msconvert 参数完全相同。
+Note: The current files API lists the RAW, FASTA, DAT, and an older mzXML file, but does not list the `-20141210.mzML` file shown above. However, the project's own data-processing protocol links directly to this mzML file, and the official PRIDE HTTPS host returns status 200 with the Content-Length shown above. The file can therefore serve as a conversion reference, but it should not be assumed to use exactly the same MSConvert parameters as the current workflow.
 
-**最小下载：**RAW + FASTA = 211.84 MiB。
-**RAW/mzML 对照：**RAW + FASTA + 官方 mzML = 641.03 MiB。
+**Minimum download:** RAW + FASTA = 211.84 MiB.
 
-## C. PTM / 多电荷：PXD079474
+**RAW/mzML comparison:** RAW + FASTA + official mzML = 641.03 MiB.
 
-PRIDE 项目：[PXD079474](https://www.ebi.ac.uk/pride/archive/projects/PXD079474)
-官方元数据：[project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD079474) · [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD079474/files?pageSize=1000&page=0)
+## C. PTM and Multiple-Charge Stress Test: PXD079474
 
-- 仪器：**Orbitrap Exploris 480**。
-- 样本：Fe-NTA 富集 phosphopeptide，搜索可变修饰包括 oxidation (M)、protein N-terminal acetylation 和 phosphorylation (S/T/Y)，固定 carbamidomethylation (C)。PRIDE PTM 受控字段是 phosphorylated residue。
-- 采集：方法文本明确是 **DDA Top15, HCD, MS2 charge 2–6**，因此能直接压测 `charge`、修饰序列和 PSM 富集字段。“允许 2–6”不等于每个电荷一定存在，最终要以提取后直方图为准。
+PRIDE project: [PXD079474](https://www.ebi.ac.uk/pride/archive/projects/PXD079474)
 
-| 角色 | 文件 | 大小 |
+Official metadata: [project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD079474); [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD079474/files?pageSize=1000&page=0)
+
+- Instrument: **Orbitrap Exploris 480**.
+- Sample: Fe-NTA-enriched phosphopeptides. Variable modifications in the search include oxidation (M), protein N-terminal acetylation, and phosphorylation (S/T/Y), with fixed carbamidomethylation (C). The PRIDE controlled PTM field is phosphorylated residue.
+- Acquisition: the method text explicitly specifies **DDA Top15, HCD, and MS2 charge 2-6**. This dataset can directly stress-test `charge`, modified sequences, and PSM enrichment fields. An allowed charge range of 2-6 does not guarantee that every charge occurs; the actual distribution must be verified after extraction.
+
+| Role | File | Size |
 |---|---|---:|
-| 首选输入 | [`SpermC_Rep1.mzML`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.mzML) | 591,044,161 B (563.66 MiB) |
+| Preferred input | [`SpermC_Rep1.mzML`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.mzML) | 591,044,161 B (563.66 MiB) |
 | FASTA | [`SwissProt_Mouse_03232022.fasta`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SwissProt_Mouse_03232022.fasta) | 11,926,463 B (11.37 MiB) |
-| 外部鉴定对照 | [`SpermC_Rep1.mzid`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.mzid) | 12,712,011 B (12.12 MiB) |
-| 可选 Thermo RAW | [`SpermC_Rep1.raw`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.raw) | 1,268,241,220 B (1,209.49 MiB) |
-| 可选 PD 结果 | [`SpermC_Rep1.pdResult`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.pdResult) | 593,108,992 B (565.63 MiB) |
+| External identification reference | [`SpermC_Rep1.mzid`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.mzid) | 12,712,011 B (12.12 MiB) |
+| Optional Thermo RAW | [`SpermC_Rep1.raw`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.raw) | 1,268,241,220 B (1,209.49 MiB) |
+| Optional PD result | [`SpermC_Rep1.pdResult`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2026/07/PXD079474/SpermC_Rep1.pdResult) | 593,108,992 B (565.63 MiB) |
 
-**建议下载：**先取 mzML + FASTA + mzid，共 587.16 MiB；这已足以检查 PTM/电荷。除非要额外测试 Exploris RAW 转换，否则不必下载 1.21 GiB RAW 和 565.63 MiB `pdResult`。
+**Recommended download:** Start with the mzML, FASTA, and mzIdentML files, totaling 587.16 MiB. This is sufficient for PTM and charge checks. There is no need to download the 1.21 GiB RAW file or the 565.63 MiB `pdResult` file unless Exploris RAW conversion will also be tested.
 
-## D. 可选金标准：PXD064530（同名 WIFF/WIFF.scan/mzML）
+## D. Optional Gold Standard: PXD064530 (Same-Name WIFF/WIFF.scan/mzML)
 
-PRIDE 项目：[PXD064530](https://www.ebi.ac.uk/pride/archive/projects/PXD064530)
-官方元数据：[project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD064530) · [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD064530/files?pageSize=1000&page=0)
+PRIDE project: [PXD064530](https://www.ebi.ac.uk/pride/archive/projects/PXD064530)
 
-- 仪器 / 采集：**TripleTOF 5600, DDA**。
-- PTM：PRIDE 标注 oxidation、deamidation、iodoacetamide derivatization 和 iTRAQ8plex-116 acylation；处理方法详细说明 iTRAQ8plex (K/Y/peptide N-terminus)、carbamidomethyl (C) 等搜索设置。
-- 关键价值：项目 data-processing protocol 明确说明 `.wiff` 由 ProteoWizard `qtofpeakpicker` 转为 mzML（resolution 15,000，threshold 7.5），且三个文件同名；非常适合检查 native ID、MS2 数量、RT 和 precursor m/z 映射。
+Official metadata: [project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD064530); [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD064530/files?pageSize=1000&page=0)
 
-| 文件 | 大小 |
+- Instrument and acquisition: **TripleTOF 5600, DDA**.
+- PTMs: PRIDE lists oxidation, deamidation, iodoacetamide derivatization, and iTRAQ8plex-116 acylation. The processing method describes search settings for iTRAQ8plex (K/Y/peptide N-terminus), carbamidomethyl (C), and other modifications in detail.
+- Primary value: the project's data-processing protocol explicitly states that the `.wiff` file was converted to mzML using the ProteoWizard `qtofpeakpicker` with resolution 15,000 and threshold 7.5, and all three files share the same base name. This makes the project particularly suitable for validating native IDs, MS2 counts, retention time, and precursor-m/z mapping.
+
+| File | Size |
 |---|---:|
 | [`23062_EA1Cleavage_iTRAQ.wiff`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2025/11/PXD064530/23062_EA1Cleavage_iTRAQ.wiff) | 10,194,944 B (9.72 MiB) |
 | [`23062_EA1Cleavage_iTRAQ.wiff.scan`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2025/11/PXD064530/23062_EA1Cleavage_iTRAQ.wiff.scan) | 1,551,030,628 B (1,479.18 MiB) |
 | [`23062_EA1Cleavage_iTRAQ.mzML`](https://ftp.pride.ebi.ac.uk/pride/data/archive/2025/11/PXD064530/23062_EA1Cleavage_iTRAQ.mzML) | 1,062,876,923 B (1,013.64 MiB) |
-| **合计** | **2,624,102,495 B = 2.44 GiB** |
+| **Total** | **2,624,102,495 B = 2.44 GiB** |
 
-## E. 可选 SCIEX + MGF 对照：PXD074970
+## E. Optional SCIEX and MGF Reference: PXD074970
 
-PRIDE 项目：[PXD074970](https://www.ebi.ac.uk/pride/archive/projects/PXD074970)
-官方元数据：[project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD074970) · [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD074970/files?pageSize=1000&page=0)
+PRIDE project: [PXD074970](https://www.ebi.ac.uk/pride/archive/projects/PXD074970)
 
-该项目的价值是每组都有 `WIFF + WIFF.scan + MGF`，可用 MGF 做独立 peak-list 对照；仪器是 TripleTOF 5600，ProteinPilot/Paragon 搜索方法包含 Met oxidation、N-terminal pyroGlu/acetylation 等可变修饰和 Cys carboxyamidomethylation。
+Official metadata: [project API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD074970); [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD074970/files?pageSize=1000&page=0)
 
-| Run | WIFF | WIFF.scan | MGF | 合计 |
+Each run in this project provides `WIFF + WIFF.scan + MGF`, so the MGF file can serve as an independent peak-list reference. The instrument is a TripleTOF 5600, and the ProteinPilot/Paragon search method includes variable Met oxidation, N-terminal pyroGlu/acetylation, and Cys carboxyamidomethylation.
+
+| Run | WIFF | WIFF.scan | MGF | Total |
 |---|---:|---:|---:|---:|
 | `pcDNA_section_1` | 17.94 MiB | 474.21 MiB | 2.85 MiB | 495.00 MiB |
 | `PACS1_WT_section_2` | 16.78 MiB | 461.44 MiB | 7.31 MiB | 485.53 MiB |
 | `PACS1_R203W_section_3` | 16.62 MiB | 449.72 MiB | 5.33 MiB | 471.67 MiB |
 
-精确文件名可见 [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD074970/files?pageSize=1000&page=0)。元数据有一处需要注意：受控 experiment type 写“Top-down proteomics”，但样本/数据处理文本明确写了 trypsin 和基于多肽的 ProteinPilot 鉴定。因此它适合做格式与谱峰对照，但测试报告中不应盲目照抄“Top-down”。
+Exact filenames are available from the [files API](https://www.ebi.ac.uk/pride/ws/archive/v3/projects/PXD074970/files?pageSize=1000&page=0). One metadata detail requires caution: the controlled experiment-type field says “Top-down proteomics,” while the sample and data-processing text explicitly describes trypsin and peptide-based ProteinPilot identification. The project is suitable for format and peak-list comparisons, but a test report should not repeat the “Top-down” label without qualification.
 
-## 建议的执行顺序与验收点
+## Recommended Execution Order and Acceptance Criteria
 
-### 1. 最小 SCIEX 冒烟（~145 MiB）
+### 1. Minimum SCIEX Smoke Test (~145 MiB)
 
-仅使用 `PXD061973/1.wiff` + `1.wiff.scan`：
+Use only `PXD061973/1.wiff` and `1.wiff.scan`:
 
-- Windows + SCIEX 兼容 msconvert 转 mzML；
-- `wiff_mzml_rawspecturm` 能完整提取 MS2；
-- FragPipe `ScanNr` 与 Parquet `scan + 1` 映射无缺失/重复；
-- native ID 不使用非唯一 cycle 单独对齐；
-- RT / precursor m/z 交叉检查全部通过。
+- Convert to mzML on Windows with a SCIEX-compatible MSConvert environment.
+- Confirm that `wiff_mzml_rawspecturm` extracts all MS2 spectra.
+- Confirm that FragPipe `ScanNr` maps to Parquet `scan + 1` without missing or duplicate matches.
+- Do not use the non-unique cycle value alone to align native IDs.
+- Require all retention-time and precursor-m/z cross-checks to pass.
 
-### 2. 4-run `file_list` + true global FDR（~615 MiB）
+### 2. Four-Run `file_list` and True Global FDR (~615 MiB)
 
-使用 `PXD061973` 的 1–4，所有 run 用完全相同的 FASTA、FragPipe workflow 和 Percolator 版本：
+Use Runs 1-4 from `PXD061973`, with exactly the same FASTA, FragPipe workflow, and Percolator version for every run:
 
-- `file_list` 四个输入都实际搜索，不覆盖输出；
-- 4 个 PIN 特征表头与 `DefaultDirection` 一致；
-- global remap 后 `(run_id, ScanNr)` 全局唯一，同一 spectrum 的多 candidate 仍共用一个 remapped scan；
-- global target/decoy 回填到单 run 后，PSM 总数与可解释的 FDR 过滤一致，不因 run 间 scan 重号丢数据。
+- Confirm that all four `file_list` inputs are actually searched and that outputs are not overwritten.
+- Confirm that the feature headers and `DefaultDirection` values are consistent across all four PIN files.
+- After global scan remapping, require `(run_id, ScanNr)` to be globally unique while preserving a shared remapped scan for multiple candidates from the same spectrum.
+- After mapping global target and decoy results back to individual runs, confirm that PSM counts agree with the expected FDR filtering and that cross-run scan-number collisions do not discard data.
 
-### 3. Thermo RAW 回归（~212 MiB 最小）
+### 3. Thermo RAW Regression (Minimum ~212 MiB)
 
-用 `PXD000001` RAW + FASTA，与当前已有 Thermo 测试结果比较 schema、scan、RT、precursor m/z、charge、`score/q-value/PEP` 缺失率。如下载官方后续 mzML，再比较 MS2 数与关键元数据；允许因转换工具/参数不同而存在可说明差异。
+Use the `PXD000001` RAW and FASTA files. Compare schema, scan, retention time, precursor m/z, charge, and `score/q-value/PEP` missingness against the existing Thermo test results. If the later official mzML file is also downloaded, compare the MS2 count and key metadata. Explainable differences caused by conversion-tool or parameter changes are acceptable.
 
-### 4. 磷酸化 / 多电荷（~587 MiB）
+### 4. Phosphorylation and Multiple Charges (~587 MiB)
 
-用 `PXD079474` 的 mzML + FASTA + mzid：
+Use the mzML, FASTA, and mzIdentML files from `PXD079474`:
 
-- 统计实际 `charge` 分布，检查范围与 DDA 2–6 设置相容；
-- 磷酸化 S/T/Y、oxidation M、N-term acetylation 和 carbamidomethyl C 的序列/位点表达不丢失、不重复、不误归一化；
-- 比较 FragPipe/Percolator 输出与存档 mzIdentML 的 scan/电荷/序列覆盖，但不强求不同搜索引擎的 PSM 一对一相等。
+- Calculate the observed `charge` distribution and confirm that it is compatible with the DDA charge range of 2-6.
+- Confirm that phosphorylation on S/T/Y, oxidation on M, N-terminal acetylation, and carbamidomethylation on C are represented without loss, duplication, or incorrect normalization.
+- Compare FragPipe/Percolator output with the archived mzIdentML for scan, charge, and sequence coverage, but do not require one-to-one PSM agreement between different search engines.
 
-## 不建议首批下载的类型
+## Input Types Not Recommended for the First Test Round
 
-- 只下载 `.wiff` 而遗漏 `.wiff.scan`。
-- 一开始就下载数 GB 的 SWATH/DIA 队列；当前主要验收的是 DDA + FragPipe/Percolator 路径。
-- 对不同批次、不同 FASTA/搜索空间的 PIN 强行做 global FDR。
-- 把存档的 Mascot DAT、ProteinPilot XLSX 或 PD `pdResult` 当成本转换器可直接消费的 FragPipe PIN；这些只是外部参考。
+- A `.wiff` file without its `.wiff.scan` companion.
+- Multi-gigabyte SWATH/DIA queues at the beginning of testing, because the current acceptance target is the DDA plus FragPipe/Percolator path.
+- PIN files from different batches, FASTA databases, or search spaces forced into one global FDR analysis.
+- Archived Mascot DAT, ProteinPilot XLSX, or PD `pdResult` files treated as FragPipe PIN input for this converter. These files are external references only.
 
-## 官方资料
+## Official Resources
 
-- [PRIDE Archive API guide](https://www.ebi.ac.uk/pride/ws/archive/v2/docs/api-guide.html)：项目、文件、MSRun 元数据等接口说明。
-- [PRIDE API overview](https://www.ebi.ac.uk/pride/markdownpage/prideapi)：v3 project/search 接口与 Swagger 入口。
-- [PRIDE file download guide](https://www.ebi.ac.uk/pride/markdownpage/pridefiledownload)：FTP/Aspera/Globus/流式下载方式。
-- [ProteomeXchange dataset lookup](https://proteomecentral.proteomexchange.org/cgi/GetDataset)：用 PXD accession 查询 ProteomeXchange 记录。
+- [PRIDE Archive API guide](https://www.ebi.ac.uk/pride/ws/archive/v2/docs/api-guide.html): endpoints for projects, files, MSRun metadata, and related records.
+- [PRIDE API overview](https://www.ebi.ac.uk/pride/markdownpage/prideapi): v3 project and search endpoints plus the Swagger entry point.
+- [PRIDE file download guide](https://www.ebi.ac.uk/pride/markdownpage/pridefiledownload): FTP, Aspera, Globus, and streaming download methods.
+- [ProteomeXchange dataset lookup](https://proteomecentral.proteomexchange.org/cgi/GetDataset): look up a ProteomeXchange record by PXD accession.
